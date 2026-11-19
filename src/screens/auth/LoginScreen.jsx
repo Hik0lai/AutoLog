@@ -1,7 +1,6 @@
 
 import { useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -13,6 +12,7 @@ import {
 } from 'react-native';
 
 import { useAuth } from '../../context/AuthContext';
+import CustomAlert from '../../components/common/CustomAlert';
 
 const colors = {
   background: '#101319',
@@ -20,7 +20,6 @@ const colors = {
   accent: '#35B6E8',
   text: '#F4F7FB',
   muted: '#929BAA',
-  danger: '#EF5B64',
 };
 
 export default function LoginScreen({ navigation }) {
@@ -30,9 +29,36 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const [alert, setAlert] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
+
+  const showAlert = (title, message, type = 'info') => {
+    setAlert({
+      visible: true,
+      title,
+      message,
+      type,
+    });
+  };
+
+  const hideAlert = () => {
+    setAlert((current) => ({
+      ...current,
+      visible: false,
+    }));
+  };
+
   const handleLogin = async () => {
     if (!email.trim() || !password) {
-      Alert.alert('Липсва информация', 'Попълни имейл и парола.');
+      showAlert(
+        'Липсва информация',
+        'Попълни имейл и парола.',
+        'warning'
+      );
       return;
     }
 
@@ -42,10 +68,14 @@ export default function LoginScreen({ navigation }) {
       const { error } = await signIn(email.trim(), password);
 
       if (error) {
-        Alert.alert('Грешка при вход', error.message);
+        showAlert(
+          'Грешка при вход',
+          error.message,
+          'error'
+        );
       }
     } catch (error) {
-      Alert.alert('Грешка', error.message);
+      showAlert('Грешка', error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -54,11 +84,12 @@ export default function LoginScreen({ navigation }) {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
           <Text style={styles.logo}>AutoLog</Text>
@@ -111,11 +142,21 @@ export default function LoginScreen({ navigation }) {
           >
             <Text style={styles.registerText}>
               Нямаш акаунт?{' '}
-              <Text style={styles.registerHighlight}>Регистрирай се</Text>
+              <Text style={styles.registerHighlight}>
+                Регистрирай се
+              </Text>
             </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <CustomAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        onConfirm={hideAlert}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -129,10 +170,11 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
     padding: 24,
+    paddingBottom: 40,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 36,
+    marginBottom: 20,
   },
   logo: {
     color: colors.accent,
