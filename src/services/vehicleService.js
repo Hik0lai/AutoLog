@@ -1,5 +1,79 @@
 
+import { decode } from 'base64-arraybuffer';
+
 import { supabase } from './supabase';
+
+// Качване на снимка в Supabase Storage
+export async function uploadVehicleImage(imageBase64, userId, imageUri) {
+  try {
+    if (!imageBase64) {
+      throw new Error('Липсват данни за снимката.');
+    }
+
+    // Декодиране на Base64 до реални байтове
+    const arrayBuffer = decode(imageBase64);
+
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error(
+        'Снимката е празна или не може да бъде прочетена.'
+      );
+    }
+
+    // Определяне на разширението на файла
+    const extension =
+      imageUri
+        ?.split('?')[0]
+        .split('.')
+        .pop()
+        ?.toLowerCase() || 'jpg';
+
+    const allowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'heic'];
+
+    const fileExtension = allowedExtensions.includes(extension)
+      ? extension
+      : 'jpg';
+
+    // Определяне на MIME типа
+    const mimeTypes = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      webp: 'image/webp',
+      heic: 'image/heic',
+    };
+
+    const contentType = mimeTypes[fileExtension];
+
+    // Създаване на уникален път за файла
+    const fileName = `${Date.now()}.${fileExtension}`;
+    const filePath = `${userId}/${fileName}`;
+
+    // Качване в Supabase Storage
+    const { data, error } = await supabase.storage
+      .from('vehicle-images')
+      .upload(filePath, arrayBuffer, {
+        contentType,
+        upsert: false,
+      });
+
+    if (error) {
+      throw error;
+    }
+
+    console.log(
+      'Vehicle image uploaded:',
+      data.path,
+      'Size:',
+      arrayBuffer.byteLength,
+      'bytes'
+    );
+
+    return data.path;
+  } catch (error) {
+    console.error('Vehicle image upload error:', error);
+    throw error;
+  }
+}
 
 // Добавяне на автомобил
 export async function createVehicle(vehicle, userId) {
@@ -14,7 +88,7 @@ export async function createVehicle(vehicle, userId) {
     additional_fuel: vehicle.additionalFuel,
     engine: vehicle.engine.trim() || null,
     mileage: Number(vehicle.mileage),
-    image_url: null,
+    image_url: vehicle.imageUrl || null,
   };
 
   const { data, error } = await supabase
@@ -23,14 +97,12 @@ export async function createVehicle(vehicle, userId) {
     .select()
     .single();
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }
 
-// Зареждане на автомобилите на потребителя
+// Зареждане на автомобилите
 export async function getVehicles(userId) {
   const { data, error } = await supabase
     .from('vehicles')
@@ -38,9 +110,7 @@ export async function getVehicles(userId) {
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 
   return data;
 }

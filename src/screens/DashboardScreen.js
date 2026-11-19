@@ -1,21 +1,131 @@
 
+import { useCallback, useRef, useState } from 'react';
+
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
+  Image,
+  useWindowDimensions,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import colors from '../constants/colors';
 import spacing from '../constants/spacing';
 import typography from '../constants/typography';
 
+import { useAuth } from '../context/AuthContext';
+import { getVehicles } from '../services/vehicleService';
+import { supabase } from '../services/supabase';
+
 export default function DashboardScreen() {
   const navigation = useNavigation();
+  const { user } = useAuth();
+
+  const { width } = useWindowDimensions();
+
+  const scrollRef = useRef(null);
+
+  const [vehicles, setVehicles] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const cardWidth = width - spacing.lg * 2;
+
+  // Зареждане на автомобилите и техните снимки от Supabase
+  const loadVehicles = useCallback(async () => {
+    if (!user) {
+      setVehicles([]);
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const data = await getVehicles(user.id);
+
+      // Генериране на временни URL адреси за снимките
+      const vehiclesWithImages = await Promise.all(
+        (data || []).map(async (vehicle) => {
+          if (!vehicle.image_url) {
+            return {
+              ...vehicle,
+              signedImageUrl: null,
+            };
+          }
+
+          try {
+            const { data: imageData, error } = await supabase.storage
+              .from('vehicle-images')
+              .createSignedUrl(vehicle.image_url, 3600);
+
+            if (error) {
+              throw error;
+            }
+
+            return {
+              ...vehicle,
+              signedImageUrl: imageData.signedUrl,
+            };
+          } catch (imageError) {
+            console.error(
+              `Грешка при зареждане на снимката за ${vehicle.brand} ${vehicle.model}:`,
+              imageError
+            );
+
+            return {
+              ...vehicle,
+              signedImageUrl: null,
+            };
+          }
+        })
+      );
+
+      setVehicles(vehiclesWithImages);
+      setCurrentIndex(0);
+    } catch (error) {
+      console.error('Dashboard vehicles error:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  // Обновяване при всяко отваряне на началната страница
+  useFocusEffect(
+    useCallback(() => {
+      loadVehicles();
+    }, [loadVehicles])
+  );
+
+  // Преминаване към конкретен автомобил
+  const scrollToVehicle = index => {
+    if (index < 0 || index >= vehicles.length) return;
+
+    scrollRef.current?.scrollTo({
+      x: index * cardWidth,
+      animated: true,
+    });
+
+    setCurrentIndex(index);
+  };
+
+  // Отчитане на текущия автомобил при плъзгане
+  const handleScrollEnd = event => {
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / cardWidth);
+
+    setCurrentIndex(index);
+  };
+
+  const openGarage = () => {
+    navigation.navigate('Гараж');
+  };
 
   return (
     <ScrollView
@@ -30,7 +140,10 @@ export default function DashboardScreen() {
           <Text style={styles.title}>Моят AutoLog</Text>
         </View>
 
-        <TouchableOpacity style={styles.profileButton}>
+        <TouchableOpacity
+          style={styles.profileButton}
+          onPress={() => navigation.navigate('Профил')}
+        >
           <Ionicons
             name="person-outline"
             size={23}
@@ -43,55 +156,213 @@ export default function DashboardScreen() {
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Моят гараж</Text>
 
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Гараж')}
-        >
+        <TouchableOpacity onPress={openGarage}>
           <Text style={styles.seeAll}>Виж всички</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Main vehicle card */}
-      <TouchableOpacity
-        style={styles.vehicleCard}
-        activeOpacity={0.85}
-        onPress={() => navigation.navigate('Гараж')}
-      >
-        <View style={styles.vehicleImage}>
-          <Ionicons
-            name="car-sport"
-            size={105}
+      {/* Vehicle loading */}
+      {loading ? (
+        <View style={styles.loadingCard}>
+          <ActivityIndicator
+            size="large"
             color={colors.primary}
           />
-
-          <View style={styles.imageLabel}>
+          <Text style={styles.loadingText}>
+            Зареждане на автомобилите...
+          </Text>
+        </View>
+      ) : vehicles.length === 0 ? (
+        /* Empty garage */
+        <TouchableOpacity
+          style={styles.vehicleCard}
+          activeOpacity={0.85}
+          onPress={openGarage}
+        >
+          <View style={styles.vehicleImage}>
             <Ionicons
-              name="camera-outline"
-              size={15}
-              color={colors.textSecondary}
+              name="car-sport"
+              size={105}
+              color={colors.primary}
             />
-            <Text style={styles.imageLabelText}>
-              Добави снимка
-            </Text>
-          </View>
-        </View>
 
-        <View style={styles.vehicleInfo}>
-          <View>
-            <Text style={styles.vehicleTitle}>
-              Твоят автомобил
-            </Text>
-            <Text style={styles.vehicleSubtitle}>
-              Все още няма добавен автомобил
-            </Text>
+            <View style={styles.imageLabel}>
+              <Ionicons
+                name="add-circle-outline"
+                size={17}
+                color={colors.textSecondary}
+              />
+              <Text style={styles.imageLabelText}>
+                Добави автомобил
+              </Text>
+            </View>
           </View>
 
-          <Ionicons
-            name="chevron-forward"
-            size={23}
-            color={colors.primary}
-          />
-        </View>
-      </TouchableOpacity>
+          <View style={styles.vehicleInfo}>
+            <View>
+              <Text style={styles.vehicleTitle}>
+                Твоят гараж е празен
+              </Text>
+              <Text style={styles.vehicleSubtitle}>
+                Все още няма добавен автомобил
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={23}
+              color={colors.primary}
+            />
+          </View>
+        </TouchableOpacity>
+      ) : (
+        <>
+          {/* Vehicles carousel */}
+          <ScrollView
+            ref={scrollRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleScrollEnd}
+            decelerationRate="fast"
+            style={styles.carousel}
+          >
+            {vehicles.map(vehicle => (
+              <TouchableOpacity
+                key={vehicle.id}
+                style={[
+                  styles.vehicleCard,
+                  { width: cardWidth },
+                ]}
+                activeOpacity={0.85}
+                onPress={openGarage}
+              >
+                <View style={styles.vehicleImage}>
+                  {vehicle.signedImageUrl ? (
+                    <Image
+                      source={{ uri: vehicle.signedImageUrl }}
+                      style={styles.vehiclePhoto}
+                      resizeMode="cover"
+                      onError={() => {
+                        console.error(
+                          `Снимката на ${vehicle.brand} ${vehicle.model} не може да бъде визуализирана.`
+                        );
+
+                        setVehicles(currentVehicles =>
+                          currentVehicles.map(item =>
+                            item.id === vehicle.id
+                              ? { ...item, signedImageUrl: null }
+                              : item
+                          )
+                        );
+                      }}
+                    />
+                  ) : (
+                    <Ionicons
+                      name="car-sport"
+                      size={105}
+                      color={colors.primary}
+                    />
+                  )}
+
+                  <View style={styles.imageLabel}>
+                    <Ionicons
+                      name="car-outline"
+                      size={15}
+                      color={colors.textSecondary}
+                    />
+                    <Text style={styles.imageLabelText}>
+                      Моят автомобил
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.vehicleInfo}>
+                  <View style={styles.vehicleTextContainer}>
+                    <Text
+                      style={styles.vehicleTitle}
+                      numberOfLines={1}
+                    >
+                      {vehicle.brand} {vehicle.model}
+                    </Text>
+
+                    <Text style={styles.vehicleSubtitle}>
+                      {vehicle.year} г. · {vehicle.registration_number}
+                    </Text>
+
+                    <Text style={styles.vehicleMileage}>
+                      {Number(vehicle.mileage).toLocaleString('bg-BG')} км
+                    </Text>
+                  </View>
+
+                  <Ionicons
+                    name="chevron-forward"
+                    size={23}
+                    color={colors.primary}
+                  />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Carousel controls */}
+          {vehicles.length > 1 && (
+            <View style={styles.carouselControls}>
+              <TouchableOpacity
+                style={[
+                  styles.arrowButton,
+                  currentIndex === 0 && styles.arrowDisabled,
+                ]}
+                disabled={currentIndex === 0}
+                onPress={() => scrollToVehicle(currentIndex - 1)}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={20}
+                  color={
+                    currentIndex === 0
+                      ? colors.textSecondary
+                      : colors.primary
+                  }
+                />
+              </TouchableOpacity>
+
+              <View style={styles.pagination}>
+                {vehicles.map((vehicle, index) => (
+                  <View
+                    key={vehicle.id}
+                    style={[
+                      styles.paginationDot,
+                      currentIndex === index &&
+                        styles.paginationDotActive,
+                    ]}
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.arrowButton,
+                  currentIndex === vehicles.length - 1 &&
+                    styles.arrowDisabled,
+                ]}
+                disabled={currentIndex === vehicles.length - 1}
+                onPress={() => scrollToVehicle(currentIndex + 1)}
+              >
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={
+                    currentIndex === vehicles.length - 1
+                      ? colors.textSecondary
+                      : colors.primary
+                  }
+                />
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
+      )}
 
       {/* Statistics */}
       <Text style={styles.sectionTitle}>
@@ -108,8 +379,13 @@ export default function DashboardScreen() {
             />
           </View>
 
-          <Text style={styles.statValue}>0</Text>
-          <Text style={styles.statLabel}>Автомобили</Text>
+          <Text style={styles.statValue}>
+            {vehicles.length}
+          </Text>
+
+          <Text style={styles.statLabel}>
+            Автомобили
+          </Text>
         </View>
 
         <View style={styles.statCard}>
@@ -122,7 +398,9 @@ export default function DashboardScreen() {
           </View>
 
           <Text style={styles.statValue}>0.00 лв.</Text>
-          <Text style={styles.statLabel}>Разходи този месец</Text>
+          <Text style={styles.statLabel}>
+            Разходи този месец
+          </Text>
         </View>
       </View>
 
@@ -181,7 +459,6 @@ export default function DashboardScreen() {
           </Text>
         </View>
       </View>
-
     </ScrollView>
   );
 }
@@ -264,6 +541,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
+    overflow: 'hidden',
+  },
+
+  vehiclePhoto: {
+    width: '100%',
+    height: '100%',
   },
 
   imageLabel: {
@@ -287,6 +570,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
+  vehicleTextContainer: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+
   vehicleTitle: {
     color: colors.text,
     fontSize: typography.sizes.lg,
@@ -297,6 +585,75 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: typography.sizes.sm,
     marginTop: spacing.xs,
+  },
+
+  vehicleMileage: {
+    color: colors.primary,
+    fontSize: typography.sizes.sm,
+    fontWeight: '600',
+    marginTop: spacing.xs,
+  },
+
+  loadingCard: {
+    height: 240,
+    backgroundColor: colors.surface,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+
+  loadingText: {
+    color: colors.textSecondary,
+    fontSize: typography.sizes.sm,
+    marginTop: spacing.md,
+  },
+
+  carousel: {
+    marginBottom: spacing.sm,
+  },
+
+  carouselControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.lg,
+    marginBottom: spacing.xl,
+  },
+
+  arrowButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  arrowDisabled: {
+    opacity: 0.4,
+  },
+
+  pagination: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+
+  paginationDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.border,
+  },
+
+  paginationDotActive: {
+    width: 19,
+    backgroundColor: colors.primary,
   },
 
   statsContainer: {

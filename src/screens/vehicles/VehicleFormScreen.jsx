@@ -21,7 +21,11 @@ import spacing from '../../constants/spacing';
 import typography from '../../constants/typography';
 
 import { useAuth } from '../../context/AuthContext';
-import { createVehicle } from '../../services/vehicleService';
+import {
+  createVehicle,
+  uploadVehicleImage,
+} from '../../services/vehicleService';
+
 import CustomAlert from '../../components/common/CustomAlert';
 
 const primaryFuelTypes = [
@@ -41,6 +45,7 @@ export default function VehicleFormScreen({ navigation }) {
   const { user } = useAuth();
 
   const [imageUri, setImageUri] = useState(null);
+  const [imageBase64, setImageBase64] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -121,10 +126,14 @@ export default function VehicleFormScreen({ navigation }) {
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
+        base64: true,
       });
 
       if (!result.canceled) {
-        setImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+
+        setImageUri(asset.uri);
+        setImageBase64(asset.base64);
       }
     } catch (error) {
       showAlert({
@@ -202,7 +211,29 @@ export default function VehicleFormScreen({ navigation }) {
     try {
       setLoading(true);
 
-      await createVehicle(form, user.id);
+      let imageUrl = null;
+
+      if (imageUri) {
+        if (!imageBase64) {
+          throw new Error(
+            'Неуспешно прочитане на снимката. Избери я отново.'
+          );
+        }
+
+        imageUrl = await uploadVehicleImage(
+          imageBase64,
+          user.id,
+          imageUri
+        );
+      }
+
+      await createVehicle(
+        {
+          ...form,
+          imageUrl,
+        },
+        user.id
+      );
 
       showAlert({
         title: 'Успешно добавяне',
@@ -266,9 +297,9 @@ export default function VehicleFormScreen({ navigation }) {
 
   return (
     <KeyboardAvoidingView
-  style={styles.container}
-  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
->
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -340,7 +371,10 @@ export default function VehicleFormScreen({ navigation }) {
 
         {imageUri ? (
           <TouchableOpacity
-            onPress={() => setImageUri(null)}
+            onPress={() => {
+              setImageUri(null);
+              setImageBase64(null);
+            }}
             style={styles.removeImageButton}
           >
             <Ionicons
@@ -383,10 +417,15 @@ export default function VehicleFormScreen({ navigation }) {
           }
         )}
 
-        {renderInput('VIN номер', 'vin', '17 символа (незадължително)', {
-          autoCapitalize: 'characters',
-          maxLength: 17,
-        })}
+        {renderInput(
+          'VIN номер',
+          'vin',
+          '17 символа (незадължително)',
+          {
+            autoCapitalize: 'characters',
+            maxLength: 17,
+          }
+        )}
 
         {/* Технически данни */}
 

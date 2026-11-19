@@ -1,19 +1,69 @@
 
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import colors from '../../constants/colors';
 import spacing from '../../constants/spacing';
 import typography from '../../constants/typography';
+import { supabase } from '../../services/supabase';
 
 export default function VehicleDetailsScreen({ route, navigation }) {
   const vehicle = route.params?.vehicle;
+
+  const [imageUrl, setImageUrl] = useState(null);
+  const [imageLoading, setImageLoading] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadVehicleImage() {
+      if (!vehicle?.image_url) {
+        setImageUrl(null);
+        return;
+      }
+
+      try {
+        setImageLoading(true);
+
+        const { data, error } = await supabase.storage
+          .from('vehicle-images')
+          .createSignedUrl(vehicle.image_url, 3600);
+
+        if (error) {
+          throw error;
+        }
+
+        if (isMounted) {
+          setImageUrl(data.signedUrl);
+        }
+      } catch (error) {
+        console.error('Грешка при зареждане на снимката:', error);
+
+        if (isMounted) {
+          setImageUrl(null);
+        }
+      } finally {
+        if (isMounted) {
+          setImageLoading(false);
+        }
+      }
+    }
+
+    loadVehicleImage();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [vehicle?.image_url]);
 
   if (!vehicle) {
     return (
@@ -74,11 +124,28 @@ export default function VehicleDetailsScreen({ route, navigation }) {
 
       <View style={styles.heroCard}>
         <View style={styles.carIconContainer}>
-          <Ionicons
-            name="car-sport"
-            size={76}
-            color={colors.primary}
-          />
+          {imageUrl ? (
+            <Image
+              source={{ uri: imageUrl }}
+              style={styles.vehicleImage}
+              resizeMode="cover"
+              onError={() => {
+                console.error('Снимката не може да бъде визуализирана.');
+                setImageUrl(null);
+              }}
+            />
+          ) : imageLoading ? (
+            <ActivityIndicator
+              size="large"
+              color={colors.primary}
+            />
+          ) : (
+            <Ionicons
+              name="car-sport"
+              size={76}
+              color={colors.primary}
+            />
+          )}
         </View>
 
         <Text style={styles.brand}>
@@ -256,6 +323,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.lg,
+    overflow: 'hidden',
+  },
+
+  vehicleImage: {
+    width: '100%',
+    height: '100%',
   },
 
   brand: {
