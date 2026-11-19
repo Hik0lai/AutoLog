@@ -8,9 +8,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 
 import * as ImagePicker from 'expo-image-picker';
@@ -19,6 +19,10 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../../constants/colors';
 import spacing from '../../constants/spacing';
 import typography from '../../constants/typography';
+
+import { useAuth } from '../../context/AuthContext';
+import { createVehicle } from '../../services/vehicleService';
+import CustomAlert from '../../components/common/CustomAlert';
 
 const primaryFuelTypes = [
   'Бензин',
@@ -34,7 +38,10 @@ const additionalFuelTypes = [
 ];
 
 export default function VehicleFormScreen({ navigation }) {
+  const { user } = useAuth();
+
   const [imageUri, setImageUri] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
     brand: '',
@@ -50,6 +57,15 @@ export default function VehicleFormScreen({ navigation }) {
 
   const [errors, setErrors] = useState({});
 
+  const [alert, setAlert] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'Разбрах',
+    onConfirm: null,
+  });
+
   const updateField = (field, value) => {
     setForm(previous => ({
       ...previous,
@@ -62,27 +78,60 @@ export default function VehicleFormScreen({ navigation }) {
     }));
   };
 
-  const selectImage = async () => {
-    const permission =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+  const hideAlert = () => {
+    setAlert(current => ({
+      ...current,
+      visible: false,
+    }));
+  };
 
-    if (!permission.granted) {
-      Alert.alert(
-        'Необходим достъп',
-        'Разреши достъп до галерията, за да избереш снимка.'
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
+  const showAlert = ({
+    title,
+    message,
+    type = 'info',
+    confirmText = 'Разбрах',
+    onConfirm,
+  }) => {
+    setAlert({
+      visible: true,
+      title,
+      message,
+      type,
+      confirmText,
+      onConfirm,
     });
+  };
 
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
+  const selectImage = async () => {
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        showAlert({
+          title: 'Необходим достъп',
+          message: 'Разреши достъп до галерията, за да избереш снимка.',
+          type: 'warning',
+        });
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (error) {
+      showAlert({
+        title: 'Грешка',
+        message: error.message,
+        type: 'error',
+      });
     }
   };
 
@@ -120,7 +169,8 @@ export default function VehicleFormScreen({ navigation }) {
       !Number.isInteger(Number(form.mileage)) ||
       Number(form.mileage) < 0
     ) {
-      newErrors.mileage = 'Километражът трябва да е цяло положително число.';
+      newErrors.mileage =
+        'Километражът трябва да е цяло положително число.';
     }
 
     setErrors(newErrors);
@@ -128,19 +178,58 @@ export default function VehicleFormScreen({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (loading) return;
+
     if (!validateForm()) {
-      Alert.alert(
-        'Невалидни данни',
-        'Моля, провери задължителните полета.'
-      );
+      showAlert({
+        title: 'Невалидни данни',
+        message: 'Моля, провери задължителните полета.',
+        type: 'warning',
+      });
       return;
     }
 
-    Alert.alert(
-      'Формата е готова',
-      'Данните са валидни. Следващата стъпка е да ги запазваме във Firebase.'
-    );
+    if (!user) {
+      showAlert({
+        title: 'Няма активна сесия',
+        message: 'Моля, влез отново в профила си.',
+        type: 'error',
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      await createVehicle(form, user.id);
+
+      showAlert({
+        title: 'Успешно добавяне',
+        message: 'Автомобилът беше добавен в твоя гараж.',
+        type: 'success',
+        confirmText: 'Към гаража',
+        onConfirm: () => {
+          hideAlert();
+          navigation.goBack();
+        },
+      });
+    } catch (error) {
+      let message = error.message;
+
+      if (error.code === '23505') {
+        message =
+          'Автомобил с този регистрационен номер или VIN вече съществува в твоя гараж.';
+      }
+
+      showAlert({
+        title: 'Грешка при записване',
+        message,
+        type: 'error',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderInput = (
@@ -177,9 +266,9 @@ export default function VehicleFormScreen({ navigation }) {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
+  style={styles.container}
+  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -384,20 +473,39 @@ export default function VehicleFormScreen({ navigation }) {
         </Text>
 
         <TouchableOpacity
-          style={styles.saveButton}
+          style={[
+            styles.saveButton,
+            loading && styles.disabledButton,
+          ]}
           onPress={handleSave}
+          disabled={loading}
           activeOpacity={0.85}
         >
-          <Ionicons
-            name="checkmark-circle-outline"
-            size={22}
-            color={colors.background}
-          />
-          <Text style={styles.saveButtonText}>
-            Запази автомобила
-          </Text>
+          {loading ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <>
+              <Ionicons
+                name="checkmark-circle-outline"
+                size={22}
+                color={colors.background}
+              />
+              <Text style={styles.saveButtonText}>
+                Запази автомобила
+              </Text>
+            </>
+          )}
         </TouchableOpacity>
       </ScrollView>
+
+      <CustomAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        confirmText={alert.confirmText}
+        onConfirm={alert.onConfirm || hideAlert}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -602,6 +710,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: spacing.sm,
     marginTop: spacing.lg,
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 
   saveButtonText: {
