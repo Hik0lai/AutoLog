@@ -19,7 +19,10 @@ import colors from '../../../constants/colors';
 import spacing from '../../../constants/spacing';
 import typography from '../../../constants/typography';
 
-import { createServiceRecord } from '../../../services/serviceRecordService';
+import {
+  createServiceRecord,
+  updateServiceRecord,
+} from '../../../services/serviceRecordService';
 
 const SERVICE_TYPES = [
   { value: 'oil', label: 'Масло и филтри' },
@@ -33,6 +36,7 @@ const SERVICE_TYPES = [
 
 function getTodayDate() {
   const today = new Date();
+
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, '0');
   const day = String(today.getDate()).padStart(2, '0');
@@ -42,14 +46,34 @@ function getTodayDate() {
 
 export default function ServiceFormScreen({ route, navigation }) {
   const vehicle = route.params?.vehicle;
+  const record = route.params?.record;
 
-  const [serviceType, setServiceType] = useState('oil');
-  const [date, setDate] = useState(getTodayDate());
-  const [mileage, setMileage] = useState(
-    vehicle?.mileage != null ? String(vehicle.mileage) : ''
+  const isEditing = Boolean(record?.id);
+
+  const [serviceType, setServiceType] = useState(
+    record?.category || 'oil'
   );
-  const [description, setDescription] = useState('');
-  const [cost, setCost] = useState('');
+
+  const [date, setDate] = useState(
+    record?.service_date || getTodayDate()
+  );
+
+  const [mileage, setMileage] = useState(
+    record?.mileage != null
+      ? String(record.mileage)
+      : vehicle?.mileage != null
+        ? String(vehicle.mileage)
+        : ''
+  );
+
+  const [description, setDescription] = useState(
+    record?.description || ''
+  );
+
+  const [cost, setCost] = useState(
+    record?.cost != null ? String(record.cost) : ''
+  );
+
   const [showTypes, setShowTypes] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -114,25 +138,39 @@ export default function ServiceFormScreen({ route, navigation }) {
       return;
     }
 
+    const formData = {
+      serviceType,
+      title: selectedType?.label || 'Обслужване',
+      date: dateValue,
+      mileage: mileageValue,
+      description,
+      cost: normalizedCost,
+    };
+
     try {
       setSaving(true);
 
-      await createServiceRecord(vehicle, {
-        serviceType,
-        title: selectedType?.label || 'Обслужване',
-        date: dateValue,
-        mileage: mileageValue,
-        description,
-        cost: normalizedCost,
-      });
+      if (isEditing) {
+        await updateServiceRecord(record.id, formData);
+      } else {
+        await createServiceRecord(vehicle, formData);
+      }
 
       Alert.alert(
-        'Успешен запис',
-        'Обслужването е записано успешно.',
+        isEditing ? 'Успешна редакция' : 'Успешен запис',
+        isEditing
+          ? 'Обслужването е обновено успешно.'
+          : 'Обслужването е записано успешно.',
         [
           {
             text: 'OK',
-            onPress: () => navigation.goBack(),
+            onPress: () => {
+              if (isEditing) {
+                navigation.pop(2);
+              } else {
+                navigation.goBack();
+              }
+            },
           },
         ]
       );
@@ -140,8 +178,11 @@ export default function ServiceFormScreen({ route, navigation }) {
       console.error('Service record save error:', error);
 
       Alert.alert(
-        'Грешка при записване',
-        error?.message || 'Неуспешно записване на обслужването.'
+        isEditing
+          ? 'Грешка при редактиране'
+          : 'Грешка при записване',
+        error?.message ||
+          'Неуспешно записване на обслужването.'
       );
     } finally {
       setSaving(false);
@@ -171,7 +212,9 @@ export default function ServiceFormScreen({ route, navigation }) {
           </TouchableOpacity>
 
           <Text style={styles.headerTitle}>
-            Ново обслужване
+            {isEditing
+              ? 'Редактиране на обслужване'
+              : 'Ново обслужване'}
           </Text>
 
           <View style={styles.headerSpacer} />
@@ -335,7 +378,9 @@ export default function ServiceFormScreen({ route, navigation }) {
           <Text style={styles.saveButtonText}>
             {saving
               ? 'Записване...'
-              : 'Запази обслужването'}
+              : isEditing
+                ? 'Запази промените'
+                : 'Запази обслужването'}
           </Text>
         </TouchableOpacity>
       </ScrollView>

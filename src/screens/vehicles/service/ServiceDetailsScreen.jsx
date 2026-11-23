@@ -1,10 +1,13 @@
 
+import { useState } from 'react';
+
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
@@ -12,6 +15,12 @@ import { Ionicons } from '@expo/vector-icons';
 import colors from '../../../constants/colors';
 import spacing from '../../../constants/spacing';
 import typography from '../../../constants/typography';
+
+import CustomAlert from '../../../components/common/CustomAlert';
+
+import {
+  deleteServiceRecord,
+} from '../../../services/serviceRecordService';
 
 function formatDate(date) {
   if (!date) return 'Не е посочена';
@@ -49,8 +58,11 @@ function DetailRow({ icon, label, value, isLast = false }) {
 
       <View style={styles.detailContent}>
         <Text style={styles.detailLabel}>{label}</Text>
+
         <Text style={styles.detailValue}>
-          {value !== null && value !== undefined && value !== ''
+          {value !== null &&
+          value !== undefined &&
+          value !== ''
             ? String(value)
             : 'Не е посочено'}
         </Text>
@@ -62,6 +74,91 @@ function DetailRow({ icon, label, value, isLast = false }) {
 export default function ServiceDetailsScreen({ route, navigation }) {
   const record = route.params?.record;
   const vehicle = route.params?.vehicle;
+
+  const [deleting, setDeleting] = useState(false);
+
+  const [alert, setAlert] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'Разбрах',
+    cancelText: undefined,
+    onConfirm: null,
+  });
+
+  const hideAlert = () => {
+    setAlert((current) => ({
+      ...current,
+      visible: false,
+    }));
+  };
+
+  const handleEdit = () => {
+    if (deleting) return;
+
+    navigation.navigate('ServiceForm', {
+      vehicle,
+      record,
+    });
+  };
+
+  const handleDelete = async () => {
+    if (deleting || !record?.id) return;
+
+    hideAlert();
+    setDeleting(true);
+
+    try {
+      await deleteServiceRecord(record.id);
+
+      setAlert({
+        visible: true,
+        title: 'Успешно изтриване',
+        message: 'Обслужването беше изтрито успешно.',
+        type: 'success',
+        confirmText: 'OK',
+        cancelText: undefined,
+        onConfirm: () => {
+          hideAlert();
+          navigation.goBack();
+        },
+      });
+    } catch (error) {
+      console.error('Service record delete error:', error);
+
+      setAlert({
+        visible: true,
+        title: 'Грешка при изтриване',
+        message:
+          error?.message ||
+          'Неуспешно изтриване на обслужването.',
+        type: 'error',
+        confirmText: 'Разбрах',
+        cancelText: undefined,
+        onConfirm: hideAlert,
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const confirmDelete = () => {
+    if (deleting || !record?.id) return;
+
+    setAlert({
+      visible: true,
+      title: 'Изтриване на обслужване',
+      message:
+        `Сигурен ли си, че искаш да изтриеш ` +
+        `„${record.title}“?\n\n` +
+        'Това действие не може да бъде отменено.',
+      type: 'warning',
+      confirmText: 'Изтрий',
+      cancelText: 'Отказ',
+      onConfirm: handleDelete,
+    });
+  };
 
   if (!record) {
     return (
@@ -81,109 +178,169 @@ export default function ServiceDetailsScreen({ route, navigation }) {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backIcon}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={colors.text}
-          />
-        </TouchableOpacity>
+    <View style={styles.container}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backIcon}
+            onPress={() => navigation.goBack()}
+            disabled={deleting}
+          >
+            <Ionicons
+              name="arrow-back"
+              size={24}
+              color={colors.text}
+            />
+          </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>
-          Детайли за обслужването
+          <Text style={styles.headerTitle}>
+            Детайли за обслужването
+          </Text>
+
+          <View style={styles.headerSpacer} />
+        </View>
+
+        <View style={styles.heroCard}>
+          <View style={styles.heroIcon}>
+            <Ionicons
+              name="construct-outline"
+              size={44}
+              color={colors.primary}
+            />
+          </View>
+
+          <Text style={styles.serviceTitle}>
+            {record.title}
+          </Text>
+
+          <Text style={styles.serviceDate}>
+            {formatDate(record.service_date)}
+          </Text>
+
+          {vehicle && (
+            <Text style={styles.vehicleName}>
+              {vehicle.brand} {vehicle.model}
+            </Text>
+          )}
+        </View>
+
+        <Text style={styles.sectionTitle}>
+          Информация за обслужването
         </Text>
 
-        <View style={styles.headerSpacer} />
-      </View>
+        <View style={styles.detailsCard}>
+          <DetailRow
+            icon="calendar-outline"
+            label="Дата"
+            value={formatDate(record.service_date)}
+          />
 
-      <View style={styles.heroCard}>
-        <View style={styles.heroIcon}>
-          <Ionicons
-            name="construct-outline"
-            size={44}
-            color={colors.primary}
+          <DetailRow
+            icon="speedometer-outline"
+            label="Пробег"
+            value={formatMileage(record.mileage)}
+          />
+
+          <DetailRow
+            icon="cash-outline"
+            label="Стойност"
+            value={formatCost(record.cost)}
+          />
+
+          <DetailRow
+            icon="business-outline"
+            label="Сервиз"
+            value={record.workshop}
+            isLast
           />
         </View>
 
-        <Text style={styles.serviceTitle}>
-          {record.title}
+        <Text style={styles.sectionTitle}>
+          Описание
         </Text>
 
-        <Text style={styles.serviceDate}>
-          {formatDate(record.service_date)}
-        </Text>
-
-        {vehicle && (
-          <Text style={styles.vehicleName}>
-            {vehicle.brand} {vehicle.model}
+        <View style={styles.descriptionCard}>
+          <Text style={styles.descriptionText}>
+            {record.description || 'Няма добавено описание.'}
           </Text>
-        )}
-      </View>
+        </View>
 
-      <Text style={styles.sectionTitle}>
-        Информация за обслужването
-      </Text>
-
-      <View style={styles.detailsCard}>
-        <DetailRow
-          icon="calendar-outline"
-          label="Дата"
-          value={formatDate(record.service_date)}
-        />
-
-        <DetailRow
-          icon="speedometer-outline"
-          label="Пробег"
-          value={formatMileage(record.mileage)}
-        />
-
-        <DetailRow
-          icon="cash-outline"
-          label="Стойност"
-          value={formatCost(record.cost)}
-        />
-
-        <DetailRow
-          icon="business-outline"
-          label="Сервиз"
-          value={record.workshop}
-          isLast
-        />
-      </View>
-
-      <Text style={styles.sectionTitle}>
-        Описание
-      </Text>
-
-      <View style={styles.descriptionCard}>
-        <Text style={styles.descriptionText}>
-          {record.description || 'Няма добавено описание.'}
-        </Text>
-      </View>
-
-      {record.notes ? (
-        <>
-          <Text style={styles.sectionTitle}>
-            Бележки
-          </Text>
-
-          <View style={styles.descriptionCard}>
-            <Text style={styles.descriptionText}>
-              {record.notes}
+        {record.notes ? (
+          <>
+            <Text style={styles.sectionTitle}>
+              Бележки
             </Text>
-          </View>
-        </>
-      ) : null}
-    </ScrollView>
+
+            <View style={styles.descriptionCard}>
+              <Text style={styles.descriptionText}>
+                {record.notes}
+              </Text>
+            </View>
+          </>
+        ) : null}
+
+        <TouchableOpacity
+          style={styles.editButton}
+          activeOpacity={0.85}
+          onPress={handleEdit}
+          disabled={deleting}
+        >
+          <Ionicons
+            name="create-outline"
+            size={22}
+            color={colors.background}
+          />
+
+          <Text style={styles.editButtonText}>
+            Редактирай обслужването
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.deleteButton,
+            deleting && styles.disabledButton,
+          ]}
+          activeOpacity={0.85}
+          onPress={confirmDelete}
+          disabled={deleting}
+        >
+          {deleting ? (
+            <ActivityIndicator
+              size="small"
+              color="#EF5B64"
+            />
+          ) : (
+            <Ionicons
+              name="trash-outline"
+              size={22}
+              color="#EF5B64"
+            />
+          )}
+
+          <Text style={styles.deleteButtonText}>
+            {deleting
+              ? 'Изтриване...'
+              : 'Изтрий обслужването'}
+          </Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <CustomAlert
+        visible={alert.visible}
+        title={alert.title}
+        message={alert.message}
+        type={alert.type}
+        confirmText={alert.confirmText}
+        cancelText={alert.cancelText}
+        onConfirm={alert.onConfirm}
+        onCancel={hideAlert}
+      />
+    </View>
   );
 }
 
@@ -330,6 +487,46 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: typography.sizes.md,
     lineHeight: 23,
+  },
+
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: spacing.lg,
+    marginTop: spacing.xxl,
+  },
+
+  editButtonText: {
+    color: colors.background,
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+  },
+
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: 'rgba(239, 91, 100, 0.10)',
+    borderColor: '#EF5B64',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+  },
+
+  deleteButtonText: {
+    color: '#EF5B64',
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 
   errorText: {
