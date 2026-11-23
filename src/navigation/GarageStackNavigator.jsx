@@ -5,6 +5,9 @@ import VehicleFormScreen from '../screens/vehicles/VehicleFormScreen';
 import VehiclesScreen from '../screens/vehicles/VehiclesScreen';
 import VehicleDetailsScreen from '../screens/vehicles/VehicleDetailsScreen';
 
+import ServiceHistoryScreen from '../screens/vehicles/service/ServiceHistoryScreen';
+import ServiceFormScreen from '../screens/vehicles/service/ServiceFormScreen';
+
 import colors from '../constants/colors';
 
 const Stack = createNativeStackNavigator();
@@ -32,6 +35,16 @@ export default function GarageStackNavigator() {
       <Stack.Screen
         name="VehicleDetails"
         component={VehicleDetailsScreen}
+      />
+
+      <Stack.Screen
+        name="ServiceHistory"
+        component={ServiceHistoryScreen}
+      />
+
+      <Stack.Screen
+        name="ServiceForm"
+        component={ServiceFormScreen}
       />
     </Stack.Navigator>
   );

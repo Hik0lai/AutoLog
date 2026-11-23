@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react';
 import {
   View,
@@ -28,6 +27,7 @@ export default function VehicleDetailsScreen({ route, navigation }) {
     async function loadVehicleImage() {
       if (!vehicle?.image_url) {
         setImageUrl(null);
+        setImageLoading(false);
         return;
       }
 
@@ -46,7 +46,10 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           setImageUrl(data.signedUrl);
         }
       } catch (error) {
-        console.error('Грешка при зареждане на снимката:', error);
+        console.error(
+          'Грешка при зареждане на снимката:',
+          error
+        );
 
         if (isMounted) {
           setImageUrl(null);
@@ -76,7 +79,9 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <Text style={styles.backButtonText}>Назад</Text>
+          <Text style={styles.backButtonText}>
+            Назад
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -96,7 +101,15 @@ export default function VehicleDetailsScreen({ route, navigation }) {
   };
 
   const getFuelLabel = (fuel) =>
-    fuelLabels[fuel?.toLowerCase()] || fuel || 'Не е посочено';
+    fuelLabels[fuel?.toLowerCase()] ||
+    fuel ||
+    'Не е посочено';
+
+  const openServiceHistory = () => {
+    navigation.navigate('ServiceHistory', {
+      vehicle,
+    });
+  };
 
   return (
     <ScrollView
@@ -104,6 +117,7 @@ export default function VehicleDetailsScreen({ route, navigation }) {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backIcon}
@@ -117,11 +131,14 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Автомобил</Text>
+        <Text style={styles.headerTitle}>
+          Автомобил
+        </Text>
 
         <View style={styles.headerSpacer} />
       </View>
 
+      {/* Vehicle hero */}
       <View style={styles.heroCard}>
         <View style={styles.carIconContainer}>
           {imageUrl ? (
@@ -130,7 +147,9 @@ export default function VehicleDetailsScreen({ route, navigation }) {
               style={styles.vehicleImage}
               resizeMode="cover"
               onError={() => {
-                console.error('Снимката не може да бъде визуализирана.');
+                console.error(
+                  'Снимката не може да бъде визуализирана.'
+                );
                 setImageUrl(null);
               }}
             />
@@ -162,12 +181,14 @@ export default function VehicleDetailsScreen({ route, navigation }) {
             size={18}
             color={colors.primary}
           />
+
           <Text style={styles.registrationText}>
             {vehicle.registration_number}
           </Text>
         </View>
       </View>
 
+      {/* Mileage */}
       <View style={styles.mileageCard}>
         <View style={styles.mileageIcon}>
           <Ionicons
@@ -178,13 +199,17 @@ export default function VehicleDetailsScreen({ route, navigation }) {
         </View>
 
         <View>
-          <Text style={styles.sectionLabel}>ТЕКУЩ ПРОБЕГ</Text>
+          <Text style={styles.sectionLabel}>
+            ТЕКУЩ ПРОБЕГ
+          </Text>
+
           <Text style={styles.mileageValue}>
             {formatMileage(vehicle.mileage)}
           </Text>
         </View>
       </View>
 
+      {/* Basic information */}
       <Text style={styles.sectionTitle}>
         Основна информация
       </Text>
@@ -212,9 +237,11 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           icon="speedometer-outline"
           label="Пробег"
           value={formatMileage(vehicle.mileage)}
+          isLast
         />
       </View>
 
+      {/* Engine and fuel */}
       <Text style={styles.sectionTitle}>
         Двигател и гориво
       </Text>
@@ -239,13 +266,53 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           isLast
         />
       </View>
+
+      {/* Service history */}
+      <Text style={styles.sectionTitle}>
+        Сервизна история
+      </Text>
+
+      <TouchableOpacity
+        style={styles.serviceCard}
+        activeOpacity={0.85}
+        onPress={openServiceHistory}
+      >
+        <View style={styles.serviceIcon}>
+          <Ionicons
+            name="construct-outline"
+            size={26}
+            color={colors.primary}
+          />
+        </View>
+
+        <View style={styles.serviceContent}>
+          <Text style={styles.serviceTitle}>
+            Обслужвания и ремонти
+          </Text>
+
+          <Text style={styles.serviceDescription}>
+            Преглед и добавяне на сервизни записи
+          </Text>
+        </View>
+
+        <Ionicons
+          name="chevron-forward"
+          size={22}
+          color={colors.primary}
+        />
+      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 function InfoRow({ icon, label, value, isLast }) {
   return (
-    <View style={[styles.infoRow, !isLast && styles.infoRowBorder]}>
+    <View
+      style={[
+        styles.infoRow,
+        !isLast && styles.infoRowBorder,
+      ]}
+    >
       <View style={styles.infoIcon}>
         <Ionicons
           name={icon}
@@ -255,9 +322,14 @@ function InfoRow({ icon, label, value, isLast }) {
       </View>
 
       <View style={styles.infoContent}>
-        <Text style={styles.infoLabel}>{label}</Text>
+        <Text style={styles.infoLabel}>
+          {label}
+        </Text>
+
         <Text style={styles.infoValue}>
-          {value !== null && value !== undefined && value !== ''
+          {value !== null &&
+          value !== undefined &&
+          value !== ''
             ? String(value)
             : 'Не е посочено'}
         </Text>
@@ -448,6 +520,43 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: '600',
     marginTop: 3,
+  },
+
+  serviceCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+
+  serviceIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+
+  serviceContent: {
+    flex: 1,
+  },
+
+  serviceTitle: {
+    color: colors.text,
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+  },
+
+  serviceDescription: {
+    color: colors.textSecondary,
+    fontSize: typography.sizes.sm,
+    marginTop: spacing.xs,
+    lineHeight: 20,
   },
 
   errorText: {
