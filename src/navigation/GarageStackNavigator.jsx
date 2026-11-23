@@ -9,6 +9,7 @@ import ServiceHistoryScreen from '../screens/vehicles/service/ServiceHistoryScre
 import ServiceFormScreen from '../screens/vehicles/service/ServiceFormScreen';
 
 import colors from '../constants/colors';
+import ServiceDetailsScreen from '../screens/vehicles/service/ServiceDetailsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -45,6 +46,10 @@ export default function GarageStackNavigator() {
       <Stack.Screen
         name="ServiceForm"
         component={ServiceFormScreen}
+      />
+      <Stack.Screen
+        name="ServiceDetails"
+        component={ServiceDetailsScreen}
       />
     </Stack.Navigator>
   );
