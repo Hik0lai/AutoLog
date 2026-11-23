@@ -52,3 +52,35 @@ export async function createServiceRecord(vehicle, formData) {
 
   return data;
 }
+
+
+export async function getServiceRecords(vehicleId) {
+  if (!vehicleId) {
+    throw new Error('Не е избран автомобил.');
+  }
+
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error('Необходимо е да влезете в профила си.');
+  }
+
+  const { data, error } = await supabase
+    .from('service_records')
+    .select('*')
+    .eq('vehicle_id', vehicleId)
+    .eq('user_id', user.id)
+    .order('service_date', { ascending: false })
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Грешка при зареждане на обслужванията:', error);
+    throw error;
+  }
+
+  return data || [];
+}
+
