@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+
+import { useCallback, useEffect, useState } from 'react';
+
 import {
   View,
   Text,
@@ -8,25 +10,75 @@ import {
   Image,
   ActivityIndicator,
 } from 'react-native';
+
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import colors from '../../constants/colors';
 import spacing from '../../constants/spacing';
 import typography from '../../constants/typography';
+
+import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
+import { getVehicleById } from '../../services/vehicleService';
 
 export default function VehicleDetailsScreen({ route, navigation }) {
-  const vehicle = route.params?.vehicle;
+  const initialVehicle = route.params?.vehicle;
+  const { user } = useAuth();
 
+  const [vehicle, setVehicle] = useState(initialVehicle || null);
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Зареждане на актуалните данни при отваряне
+  // и при връщане от редактиране.
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      async function refreshVehicle() {
+        if (!initialVehicle?.id || !user?.id) return;
+
+        try {
+          setRefreshing(true);
+
+          const updatedVehicle = await getVehicleById(
+            initialVehicle.id,
+            user.id
+          );
+
+          if (active) {
+            setVehicle(updatedVehicle);
+          }
+        } catch (error) {
+          console.error(
+            'Грешка при обновяване на автомобила:',
+            error
+          );
+        } finally {
+          if (active) {
+            setRefreshing(false);
+          }
+        }
+      }
+
+      refreshVehicle();
+
+      return () => {
+        active = false;
+      };
+    }, [initialVehicle?.id, user?.id])
+  );
+
+  // Зареждане на снимката от Supabase Storage.
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
 
     async function loadVehicleImage() {
+      setImageUrl(null);
+
       if (!vehicle?.image_url) {
-        setImageUrl(null);
         setImageLoading(false);
         return;
       }
@@ -38,11 +90,9 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           .from('vehicle-images')
           .createSignedUrl(vehicle.image_url, 3600);
 
-        if (error) {
-          throw error;
-        }
+        if (error) throw error;
 
-        if (isMounted) {
+        if (active) {
           setImageUrl(data.signedUrl);
         }
       } catch (error) {
@@ -51,11 +101,11 @@ export default function VehicleDetailsScreen({ route, navigation }) {
           error
         );
 
-        if (isMounted) {
+        if (active) {
           setImageUrl(null);
         }
       } finally {
-        if (isMounted) {
+        if (active) {
           setImageLoading(false);
         }
       }
@@ -64,9 +114,43 @@ export default function VehicleDetailsScreen({ route, navigation }) {
     loadVehicleImage();
 
     return () => {
-      isMounted = false;
+      active = false;
     };
   }, [vehicle?.image_url]);
+
+  const handleEdit = () => {
+    if (!vehicle) return;
+
+    navigation.navigate('VehicleForm', {
+      vehicle,
+    });
+  };
+
+  const openServiceHistory = () => {
+    if (!vehicle) return;
+
+    navigation.navigate('ServiceHistory', {
+      vehicle,
+    });
+  };
+
+  const formatMileage = (mileage) =>
+    `${Number(mileage || 0).toLocaleString('bg-BG')} км`;
+
+  const fuelLabels = {
+    petrol: 'Бензин',
+    diesel: 'Дизел',
+    electric: 'Електричество',
+    hybrid: 'Хибрид',
+    lpg: 'Газ (LPG)',
+    cng: 'Метан (CNG)',
+    none: 'Няма',
+  };
+
+  const getFuelLabel = (fuel) =>
+    fuelLabels[fuel?.toLowerCase()] ||
+    fuel ||
+    'Не е посочено';
 
   if (!vehicle) {
     return (
@@ -87,37 +171,12 @@ export default function VehicleDetailsScreen({ route, navigation }) {
     );
   }
 
-  const formatMileage = (mileage) =>
-    `${Number(mileage || 0).toLocaleString('bg-BG')} км`;
-
-  const fuelLabels = {
-    petrol: 'Бензин',
-    diesel: 'Дизел',
-    electric: 'Електричество',
-    hybrid: 'Хибрид',
-    lpg: 'Газ (LPG)',
-    cng: 'Метан (CNG)',
-    none: 'Няма',
-  };
-
-  const getFuelLabel = (fuel) =>
-    fuelLabels[fuel?.toLowerCase()] ||
-    fuel ||
-    'Не е посочено';
-
-  const openServiceHistory = () => {
-    navigation.navigate('ServiceHistory', {
-      vehicle,
-    });
-  };
-
   return (
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backIcon}
@@ -138,7 +197,6 @@ export default function VehicleDetailsScreen({ route, navigation }) {
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Vehicle hero */}
       <View style={styles.heroCard}>
         <View style={styles.carIconContainer}>
           {imageUrl ? (
@@ -146,12 +204,7 @@ export default function VehicleDetailsScreen({ route, navigation }) {
               source={{ uri: imageUrl }}
               style={styles.vehicleImage}
               resizeMode="cover"
-              onError={() => {
-                console.error(
-                  'Снимката не може да бъде визуализирана.'
-                );
-                setImageUrl(null);
-              }}
+              onError={() => setImageUrl(null)}
             />
           ) : imageLoading ? (
             <ActivityIndicator
@@ -186,9 +239,16 @@ export default function VehicleDetailsScreen({ route, navigation }) {
             {vehicle.registration_number}
           </Text>
         </View>
+
+        {refreshing && (
+          <ActivityIndicator
+            size="small"
+            color={colors.primary}
+            style={{ marginTop: spacing.md }}
+          />
+        )}
       </View>
 
-      {/* Mileage */}
       <View style={styles.mileageCard}>
         <View style={styles.mileageIcon}>
           <Ionicons
@@ -209,7 +269,6 @@ export default function VehicleDetailsScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* Basic information */}
       <Text style={styles.sectionTitle}>
         Основна информация
       </Text>
@@ -241,7 +300,6 @@ export default function VehicleDetailsScreen({ route, navigation }) {
         />
       </View>
 
-      {/* Engine and fuel */}
       <Text style={styles.sectionTitle}>
         Двигател и гориво
       </Text>
@@ -267,7 +325,26 @@ export default function VehicleDetailsScreen({ route, navigation }) {
         />
       </View>
 
-      {/* Service history */}
+      <Text style={styles.sectionTitle}>
+        Управление на автомобила
+      </Text>
+
+      <TouchableOpacity
+        style={styles.editButton}
+        activeOpacity={0.85}
+        onPress={handleEdit}
+      >
+        <Ionicons
+          name="create-outline"
+          size={22}
+          color={colors.background}
+        />
+
+        <Text style={styles.editButtonText}>
+          Редактирай автомобила
+        </Text>
+      </TouchableOpacity>
+
       <Text style={styles.sectionTitle}>
         Сервизна история
       </Text>
@@ -520,6 +597,22 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: '600',
     marginTop: 3,
+  },
+
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: 14,
+    paddingVertical: spacing.lg,
+  },
+
+  editButtonText: {
+    color: colors.background,
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
   },
 
   serviceCard: {

@@ -1,5 +1,6 @@
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
 import {
   View,
   Text,
@@ -21,11 +22,14 @@ import spacing from '../../constants/spacing';
 import typography from '../../constants/typography';
 
 import { useAuth } from '../../context/AuthContext';
+
 import {
   createVehicle,
+  updateVehicle,
   uploadVehicleImage,
 } from '../../services/vehicleService';
 
+import { supabase } from '../../services/supabase';
 import CustomAlert from '../../components/common/CustomAlert';
 
 const primaryFuelTypes = [
@@ -41,23 +45,30 @@ const additionalFuelTypes = [
   { label: 'CNG - метан', value: 'cng' },
 ];
 
-export default function VehicleFormScreen({ navigation }) {
+export default function VehicleFormScreen({ route, navigation }) {
   const { user } = useAuth();
+
+  const vehicle = route.params?.vehicle;
+  const isEditing = Boolean(vehicle?.id);
 
   const [imageUri, setImageUri] = useState(null);
   const [imageBase64, setImageBase64] = useState(null);
+  const [imageRemoved, setImageRemoved] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
-    brand: '',
-    model: '',
-    year: '',
-    registrationNumber: '',
-    vin: '',
-    primaryFuel: 'Бензин',
-    additionalFuel: 'none',
-    engine: '',
-    mileage: '',
+    brand: vehicle?.brand || '',
+    model: vehicle?.model || '',
+    year: vehicle?.year != null ? String(vehicle.year) : '',
+    registrationNumber: vehicle?.registration_number || '',
+    vin: vehicle?.vin || '',
+    primaryFuel: vehicle?.primary_fuel || 'Бензин',
+    additionalFuel: vehicle?.additional_fuel || 'none',
+    engine: vehicle?.engine || '',
+    mileage: vehicle?.mileage != null
+      ? String(vehicle.mileage)
+      : '',
   });
 
   const [errors, setErrors] = useState({});
@@ -70,6 +81,46 @@ export default function VehicleFormScreen({ navigation }) {
     confirmText: 'Разбрах',
     onConfirm: null,
   });
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadExistingImage() {
+      if (!isEditing || !vehicle?.image_url) {
+        setImageLoading(false);
+        return;
+      }
+
+      try {
+        setImageLoading(true);
+
+        const { data, error } = await supabase.storage
+          .from('vehicle-images')
+          .createSignedUrl(vehicle.image_url, 3600);
+
+        if (error) throw error;
+
+        if (active) {
+          setImageUri(data.signedUrl);
+        }
+      } catch (error) {
+        console.error(
+          'Грешка при зареждане на снимката:',
+          error
+        );
+      } finally {
+        if (active) {
+          setImageLoading(false);
+        }
+      }
+    }
+
+    loadExistingImage();
+
+    return () => {
+      active = false;
+    };
+  }, [isEditing, vehicle?.image_url]);
 
   const updateField = (field, value) => {
     setForm(previous => ({
@@ -108,6 +159,8 @@ export default function VehicleFormScreen({ navigation }) {
   };
 
   const selectImage = async () => {
+    if (loading) return;
+
     try {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -115,7 +168,8 @@ export default function VehicleFormScreen({ navigation }) {
       if (!permission.granted) {
         showAlert({
           title: 'Необходим достъп',
-          message: 'Разреши достъп до галерията, за да избереш снимка.',
+          message:
+            'Разреши достъп до галерията, за да избереш снимка.',
           type: 'warning',
         });
         return;
@@ -129,11 +183,18 @@ export default function VehicleFormScreen({ navigation }) {
         base64: true,
       });
 
-      if (!result.canceled) {
+      if (!result.canceled && result.assets?.length) {
         const asset = result.assets[0];
+
+        if (!asset.base64) {
+          throw new Error(
+            'Неуспешно прочитане на снимката. Опитай отново.'
+          );
+        }
 
         setImageUri(asset.uri);
         setImageBase64(asset.base64);
+        setImageRemoved(false);
       }
     } catch (error) {
       showAlert({
@@ -142,6 +203,12 @@ export default function VehicleFormScreen({ navigation }) {
         type: 'error',
       });
     }
+  };
+
+  const removeImage = () => {
+    setImageUri(null);
+    setImageBase64(null);
+    setImageRemoved(true);
   };
 
   const validateForm = () => {
@@ -169,7 +236,8 @@ export default function VehicleFormScreen({ navigation }) {
     }
 
     if (!form.registrationNumber.trim()) {
-      newErrors.registrationNumber = 'Въведи регистрационен номер.';
+      newErrors.registrationNumber =
+        'Въведи регистрационен номер.';
     }
 
     if (!form.mileage.trim()) {
@@ -211,15 +279,16 @@ export default function VehicleFormScreen({ navigation }) {
     try {
       setLoading(true);
 
-      let imageUrl = null;
+      let imageUrl = isEditing
+        ? vehicle.image_url || null
+        : null;
 
-      if (imageUri) {
-        if (!imageBase64) {
-          throw new Error(
-            'Неуспешно прочитане на снимката. Избери я отново.'
-          );
-        }
+      if (imageRemoved) {
+        imageUrl = null;
+      }
 
+      // Качваме снимка само ако е избрана нова.
+      if (imageBase64 && imageUri) {
         imageUrl = await uploadVehicleImage(
           imageBase64,
           user.id,
@@ -227,30 +296,51 @@ export default function VehicleFormScreen({ navigation }) {
         );
       }
 
-      await createVehicle(
-        {
-          ...form,
-          imageUrl,
-        },
-        user.id
-      );
+      const vehicleData = {
+        ...form,
+        imageUrl,
+      };
 
-      showAlert({
-        title: 'Успешно добавяне',
-        message: 'Автомобилът беше добавен в твоя гараж.',
-        type: 'success',
-        confirmText: 'Към гаража',
-        onConfirm: () => {
-          hideAlert();
-          navigation.goBack();
-        },
-      });
+      if (isEditing) {
+        await updateVehicle(
+          vehicle.id,
+          vehicleData,
+          user.id
+        );
+
+        showAlert({
+          title: 'Успешна редакция',
+          message:
+            'Промените по автомобила бяха запазени успешно.',
+          type: 'success',
+          confirmText: 'Към автомобила',
+          onConfirm: () => {
+            hideAlert();
+            navigation.goBack();
+          },
+        });
+      } else {
+        await createVehicle(vehicleData, user.id);
+
+        showAlert({
+          title: 'Успешно добавяне',
+          message:
+            'Автомобилът беше добавен в твоя гараж.',
+          type: 'success',
+          confirmText: 'Към гаража',
+          onConfirm: () => {
+            hideAlert();
+            navigation.goBack();
+          },
+        });
+      }
     } catch (error) {
-      let message = error.message;
+      let message =
+        error.message || 'Възникна грешка при записване.';
 
       if (error.code === '23505') {
         message =
-          'Автомобил с този регистрационен номер или VIN вече съществува в твоя гараж.';
+          'Автомобил с този регистрационен номер или VIN вече съществува.';
       }
 
       showAlert({
@@ -287,10 +377,13 @@ export default function VehicleFormScreen({ navigation }) {
         keyboardType={options.keyboardType || 'default'}
         autoCapitalize={options.autoCapitalize || 'sentences'}
         maxLength={options.maxLength}
+        editable={!loading}
       />
 
       {errors[field] ? (
-        <Text style={styles.errorText}>{errors[field]}</Text>
+        <Text style={styles.errorText}>
+          {errors[field]}
+        </Text>
       ) : null}
     </View>
   );
@@ -309,6 +402,7 @@ export default function VehicleFormScreen({ navigation }) {
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.backButton}
+            disabled={loading}
           >
             <Ionicons
               name="arrow-back"
@@ -318,26 +412,39 @@ export default function VehicleFormScreen({ navigation }) {
           </TouchableOpacity>
 
           <View style={styles.headerTextContainer}>
-            <Text style={styles.headerTitle}>Нов автомобил</Text>
+            <Text style={styles.headerTitle}>
+              {isEditing
+                ? 'Редактиране на автомобил'
+                : 'Нов автомобил'}
+            </Text>
+
             <Text style={styles.headerSubtitle}>
-              Добави автомобил в своя гараж
+              {isEditing
+                ? 'Промени данните на автомобила'
+                : 'Добави автомобил в своя гараж'}
             </Text>
           </View>
         </View>
 
-        {/* Снимка на автомобила */}
-
-        <Text style={styles.sectionTitle}>Снимка на автомобила</Text>
+        <Text style={styles.sectionTitle}>
+          Снимка на автомобила
+        </Text>
 
         <TouchableOpacity
           style={styles.imageContainer}
           onPress={selectImage}
           activeOpacity={0.85}
+          disabled={loading || imageLoading}
         >
           {imageUri ? (
             <Image
               source={{ uri: imageUri }}
               style={styles.vehicleImage}
+            />
+          ) : imageLoading ? (
+            <ActivityIndicator
+              size="large"
+              color={colors.primary}
             />
           ) : (
             <View style={styles.imagePlaceholder}>
@@ -363,6 +470,7 @@ export default function VehicleFormScreen({ navigation }) {
               size={20}
               color={colors.background}
             />
+
             <Text style={styles.imageButtonText}>
               {imageUri ? 'Смени снимката' : 'Добави снимка'}
             </Text>
@@ -371,26 +479,25 @@ export default function VehicleFormScreen({ navigation }) {
 
         {imageUri ? (
           <TouchableOpacity
-            onPress={() => {
-              setImageUri(null);
-              setImageBase64(null);
-            }}
+            onPress={removeImage}
             style={styles.removeImageButton}
+            disabled={loading}
           >
             <Ionicons
               name="trash-outline"
               size={16}
               color={colors.danger}
             />
+
             <Text style={styles.removeImageText}>
               Премахни снимката
             </Text>
           </TouchableOpacity>
         ) : null}
 
-        {/* Основна информация */}
-
-        <Text style={styles.sectionTitle}>Основна информация</Text>
+        <Text style={styles.sectionTitle}>
+          Основна информация
+        </Text>
 
         {renderInput('Марка', 'brand', 'Например Audi', {
           required: true,
@@ -427,14 +534,14 @@ export default function VehicleFormScreen({ navigation }) {
           }
         )}
 
-        {/* Технически данни */}
-
-        <Text style={styles.sectionTitle}>Технически данни</Text>
-
-        {/* Основно гориво */}
+        <Text style={styles.sectionTitle}>
+          Технически данни
+        </Text>
 
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Основно гориво *</Text>
+          <Text style={styles.label}>
+            Основно гориво *
+          </Text>
 
           <View style={styles.fuelContainer}>
             {primaryFuelTypes.map(type => (
@@ -442,14 +549,17 @@ export default function VehicleFormScreen({ navigation }) {
                 key={type}
                 style={[
                   styles.fuelOption,
-                  form.primaryFuel === type && styles.fuelOptionSelected,
+                  form.primaryFuel === type &&
+                    styles.fuelOptionSelected,
                 ]}
                 onPress={() => updateField('primaryFuel', type)}
+                disabled={loading}
               >
                 <Text
                   style={[
                     styles.fuelText,
-                    form.primaryFuel === type && styles.fuelTextSelected,
+                    form.primaryFuel === type &&
+                      styles.fuelTextSelected,
                   ]}
                 >
                   {type}
@@ -458,8 +568,6 @@ export default function VehicleFormScreen({ navigation }) {
             ))}
           </View>
         </View>
-
-        {/* Допълнителна горивна система */}
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>
@@ -475,7 +583,10 @@ export default function VehicleFormScreen({ navigation }) {
                   form.additionalFuel === option.value &&
                     styles.fuelOptionSelected,
                 ]}
-                onPress={() => updateField('additionalFuel', option.value)}
+                onPress={() =>
+                  updateField('additionalFuel', option.value)
+                }
+                disabled={loading}
               >
                 <Text
                   style={[
@@ -529,8 +640,11 @@ export default function VehicleFormScreen({ navigation }) {
                 size={22}
                 color={colors.background}
               />
+
               <Text style={styles.saveButtonText}>
-                Запази автомобила
+                {isEditing
+                  ? 'Запази промените'
+                  : 'Запази автомобила'}
               </Text>
             </>
           )}

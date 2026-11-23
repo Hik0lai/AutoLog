@@ -114,3 +114,67 @@ export async function getVehicles(userId) {
 
   return data;
 }
+
+
+export async function updateVehicle(vehicleId, vehicle, userId) {
+  if (!vehicleId) {
+    throw new Error('Не е избран автомобил.');
+  }
+
+  if (!userId) {
+    throw new Error('Няма активна потребителска сесия.');
+  }
+
+  const vehicleData = {
+    brand: vehicle.brand.trim(),
+    model: vehicle.model.trim(),
+    year: Number(vehicle.year),
+    registration_number: vehicle.registrationNumber
+      .trim()
+      .toUpperCase(),
+    vin: vehicle.vin.trim() || null,
+    primary_fuel: vehicle.primaryFuel,
+    additional_fuel: vehicle.additionalFuel,
+    engine: vehicle.engine.trim() || null,
+    mileage: Number(vehicle.mileage),
+    image_url: vehicle.imageUrl || null,
+  };
+
+  const { data, error } = await supabase
+    .from('vehicles')
+    .update(vehicleData)
+    .eq('id', vehicleId)
+    .eq('user_id', userId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Vehicle update error:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+
+export async function getVehicleById(vehicleId, userId) {
+  if (!vehicleId || !userId) {
+    throw new Error('Липсва автомобил или потребител.');
+  }
+
+  const { data, error } = await supabase
+    .from('vehicles')
+    .select('*')
+    .eq('id', vehicleId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    console.error('Vehicle fetch error:', error);
+    throw error;
+  }
+
+  return data;
+}
+
+
