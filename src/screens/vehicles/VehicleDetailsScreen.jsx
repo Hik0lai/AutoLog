@@ -20,19 +20,30 @@ import typography from '../../constants/typography';
 
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../services/supabase';
-import { getVehicleById } from '../../services/vehicleService';
+
+import {
+  getVehicleById,
+  deleteVehicle,
+} from '../../services/vehicleService';
+
+import CustomAlert from '../../components/common/CustomAlert';
 
 export default function VehicleDetailsScreen({ route, navigation }) {
   const initialVehicle = route.params?.vehicle;
   const { user } = useAuth();
 
   const [vehicle, setVehicle] = useState(initialVehicle || null);
+
   const [imageUrl, setImageUrl] = useState(null);
   const [imageLoading, setImageLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Зареждане на актуалните данни при отваряне
-  // и при връщане от редактиране.
+  const [deleteAlertVisible, setDeleteAlertVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
+  // Обновяване на данните при отваряне на екрана
+  // и при връщане след редактиране.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -119,7 +130,7 @@ export default function VehicleDetailsScreen({ route, navigation }) {
   }, [vehicle?.image_url]);
 
   const handleEdit = () => {
-    if (!vehicle) return;
+    if (!vehicle || deleting) return;
 
     navigation.navigate('VehicleForm', {
       vehicle,
@@ -127,11 +138,41 @@ export default function VehicleDetailsScreen({ route, navigation }) {
   };
 
   const openServiceHistory = () => {
-    if (!vehicle) return;
+    if (!vehicle || deleting) return;
 
     navigation.navigate('ServiceHistory', {
       vehicle,
     });
+  };
+
+  const handleDelete = async () => {
+    if (!vehicle?.id || !user?.id || deleting) return;
+
+    try {
+      setDeleting(true);
+      setDeleteError('');
+
+      await deleteVehicle(vehicle.id, user.id);
+
+      setDeleteAlertVisible(false);
+
+      // Връщане към списъка с автомобили.
+      navigation.goBack();
+    } catch (error) {
+      console.error(
+        'Грешка при изтриване на автомобила:',
+        error
+      );
+
+      setDeleteAlertVisible(false);
+
+      setDeleteError(
+        error.message ||
+          'Неуспешно изтриване на автомобила.'
+      );
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const formatMileage = (mileage) =>
@@ -172,213 +213,287 @@ export default function VehicleDetailsScreen({ route, navigation }) {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backIcon}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.8}
-        >
-          <Ionicons
-            name="arrow-back"
-            size={24}
-            color={colors.text}
-          />
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>
-          Автомобил
-        </Text>
-
-        <View style={styles.headerSpacer} />
-      </View>
-
-      <View style={styles.heroCard}>
-        <View style={styles.carIconContainer}>
-          {imageUrl ? (
-            <Image
-              source={{ uri: imageUrl }}
-              style={styles.vehicleImage}
-              resizeMode="cover"
-              onError={() => setImageUrl(null)}
-            />
-          ) : imageLoading ? (
-            <ActivityIndicator
-              size="large"
-              color={colors.primary}
-            />
-          ) : (
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backIcon}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
+            disabled={deleting}
+          >
             <Ionicons
-              name="car-sport"
-              size={76}
+              name="arrow-back"
+              size={24}
+              color={colors.text}
+            />
+          </TouchableOpacity>
+
+          <Text style={styles.headerTitle}>
+            Автомобил
+          </Text>
+
+          <View style={styles.headerSpacer} />
+        </View>
+
+        {/* Vehicle hero */}
+        <View style={styles.heroCard}>
+          <View style={styles.carIconContainer}>
+            {imageUrl ? (
+              <Image
+                source={{ uri: imageUrl }}
+                style={styles.vehicleImage}
+                resizeMode="cover"
+                onError={() => setImageUrl(null)}
+              />
+            ) : imageLoading ? (
+              <ActivityIndicator
+                size="large"
+                color={colors.primary}
+              />
+            ) : (
+              <Ionicons
+                name="car-sport"
+                size={76}
+                color={colors.primary}
+              />
+            )}
+          </View>
+
+          <Text style={styles.brand}>
+            {vehicle.brand} {vehicle.model}
+          </Text>
+
+          <Text style={styles.year}>
+            {vehicle.year || 'Година не е посочена'}
+          </Text>
+
+          <View style={styles.registrationBadge}>
+            <Ionicons
+              name="card-outline"
+              size={18}
               color={colors.primary}
+            />
+
+            <Text style={styles.registrationText}>
+              {vehicle.registration_number}
+            </Text>
+          </View>
+
+          {refreshing && (
+            <ActivityIndicator
+              size="small"
+              color={colors.primary}
+              style={styles.refreshIndicator}
             />
           )}
         </View>
 
-        <Text style={styles.brand}>
-          {vehicle.brand} {vehicle.model}
+        {/* Mileage */}
+        <View style={styles.mileageCard}>
+          <View style={styles.mileageIcon}>
+            <Ionicons
+              name="speedometer-outline"
+              size={25}
+              color={colors.primary}
+            />
+          </View>
+
+          <View>
+            <Text style={styles.sectionLabel}>
+              ТЕКУЩ ПРОБЕГ
+            </Text>
+
+            <Text style={styles.mileageValue}>
+              {formatMileage(vehicle.mileage)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Basic information */}
+        <Text style={styles.sectionTitle}>
+          Основна информация
         </Text>
 
-        <Text style={styles.year}>
-          {vehicle.year || 'Година не е посочена'}
+        <View style={styles.infoCard}>
+          <InfoRow
+            icon="calendar-outline"
+            label="Година"
+            value={vehicle.year}
+          />
+
+          <InfoRow
+            icon="card-outline"
+            label="Регистрационен номер"
+            value={vehicle.registration_number}
+          />
+
+          <InfoRow
+            icon="barcode-outline"
+            label="VIN"
+            value={vehicle.vin || 'Не е посочен'}
+          />
+
+          <InfoRow
+            icon="speedometer-outline"
+            label="Пробег"
+            value={formatMileage(vehicle.mileage)}
+            isLast
+          />
+        </View>
+
+        {/* Engine and fuel */}
+        <Text style={styles.sectionTitle}>
+          Двигател и гориво
         </Text>
 
-        <View style={styles.registrationBadge}>
-          <Ionicons
-            name="card-outline"
-            size={18}
-            color={colors.primary}
+        <View style={styles.infoCard}>
+          <InfoRow
+            icon="hardware-chip-outline"
+            label="Двигател"
+            value={vehicle.engine || 'Не е посочен'}
           />
 
-          <Text style={styles.registrationText}>
-            {vehicle.registration_number}
-          </Text>
-        </View>
-
-        {refreshing && (
-          <ActivityIndicator
-            size="small"
-            color={colors.primary}
-            style={{ marginTop: spacing.md }}
+          <InfoRow
+            icon="flame-outline"
+            label="Основно гориво"
+            value={getFuelLabel(vehicle.primary_fuel)}
           />
-        )}
-      </View>
 
-      <View style={styles.mileageCard}>
-        <View style={styles.mileageIcon}>
-          <Ionicons
-            name="speedometer-outline"
-            size={25}
-            color={colors.primary}
+          <InfoRow
+            icon="water-outline"
+            label="Допълнително гориво"
+            value={getFuelLabel(vehicle.additional_fuel)}
+            isLast
           />
         </View>
 
-        <View>
-          <Text style={styles.sectionLabel}>
-            ТЕКУЩ ПРОБЕГ
-          </Text>
-
-          <Text style={styles.mileageValue}>
-            {formatMileage(vehicle.mileage)}
-          </Text>
-        </View>
-      </View>
-
-      <Text style={styles.sectionTitle}>
-        Основна информация
-      </Text>
-
-      <View style={styles.infoCard}>
-        <InfoRow
-          icon="calendar-outline"
-          label="Година"
-          value={vehicle.year}
-        />
-
-        <InfoRow
-          icon="card-outline"
-          label="Регистрационен номер"
-          value={vehicle.registration_number}
-        />
-
-        <InfoRow
-          icon="barcode-outline"
-          label="VIN"
-          value={vehicle.vin || 'Не е посочен'}
-        />
-
-        <InfoRow
-          icon="speedometer-outline"
-          label="Пробег"
-          value={formatMileage(vehicle.mileage)}
-          isLast
-        />
-      </View>
-
-      <Text style={styles.sectionTitle}>
-        Двигател и гориво
-      </Text>
-
-      <View style={styles.infoCard}>
-        <InfoRow
-          icon="hardware-chip-outline"
-          label="Двигател"
-          value={vehicle.engine || 'Не е посочен'}
-        />
-
-        <InfoRow
-          icon="flame-outline"
-          label="Основно гориво"
-          value={getFuelLabel(vehicle.primary_fuel)}
-        />
-
-        <InfoRow
-          icon="water-outline"
-          label="Допълнително гориво"
-          value={getFuelLabel(vehicle.additional_fuel)}
-          isLast
-        />
-      </View>
-
-      <Text style={styles.sectionTitle}>
-        Управление на автомобила
-      </Text>
-
-      <TouchableOpacity
-        style={styles.editButton}
-        activeOpacity={0.85}
-        onPress={handleEdit}
-      >
-        <Ionicons
-          name="create-outline"
-          size={22}
-          color={colors.background}
-        />
-
-        <Text style={styles.editButtonText}>
-          Редактирай автомобила
+        {/* Vehicle management */}
+        <Text style={styles.sectionTitle}>
+          Управление на автомобила
         </Text>
-      </TouchableOpacity>
 
-      <Text style={styles.sectionTitle}>
-        Сервизна история
-      </Text>
-
-      <TouchableOpacity
-        style={styles.serviceCard}
-        activeOpacity={0.85}
-        onPress={openServiceHistory}
-      >
-        <View style={styles.serviceIcon}>
+        <TouchableOpacity
+          style={styles.editButton}
+          activeOpacity={0.85}
+          onPress={handleEdit}
+          disabled={deleting}
+        >
           <Ionicons
-            name="construct-outline"
-            size={26}
+            name="create-outline"
+            size={22}
+            color={colors.background}
+          />
+
+          <Text style={styles.editButtonText}>
+            Редактирай автомобила
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.deleteButton,
+            deleting && styles.disabledButton,
+          ]}
+          activeOpacity={0.85}
+          disabled={deleting}
+          onPress={() => {
+            setDeleteError('');
+            setDeleteAlertVisible(true);
+          }}
+        >
+          {deleting ? (
+            <ActivityIndicator color={colors.danger} />
+          ) : (
+            <Ionicons
+              name="trash-outline"
+              size={22}
+              color={colors.danger}
+            />
+          )}
+
+          <Text style={styles.deleteButtonText}>
+            {deleting
+              ? 'Изтриване...'
+              : 'Изтрий автомобила'}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Service history */}
+        <Text style={styles.sectionTitle}>
+          Сервизна история
+        </Text>
+
+        <TouchableOpacity
+          style={styles.serviceCard}
+          activeOpacity={0.85}
+          onPress={openServiceHistory}
+          disabled={deleting}
+        >
+          <View style={styles.serviceIcon}>
+            <Ionicons
+              name="construct-outline"
+              size={26}
+              color={colors.primary}
+            />
+          </View>
+
+          <View style={styles.serviceContent}>
+            <Text style={styles.serviceTitle}>
+              Обслужвания и ремонти
+            </Text>
+
+            <Text style={styles.serviceDescription}>
+              Преглед и добавяне на сервизни записи
+            </Text>
+          </View>
+
+          <Ionicons
+            name="chevron-forward"
+            size={22}
             color={colors.primary}
           />
-        </View>
+        </TouchableOpacity>
+      </ScrollView>
 
-        <View style={styles.serviceContent}>
-          <Text style={styles.serviceTitle}>
-            Обслужвания и ремонти
-          </Text>
+      {/* Delete confirmation */}
+      <CustomAlert
+        visible={deleteAlertVisible}
+        title="Изтриване на автомобил"
+        message={
+          `Сигурен ли си, че искаш да изтриеш ` +
+          `${vehicle.brand} ${vehicle.model} ` +
+          `(${vehicle.registration_number})?\n\n` +
+          'Всички сервизни записи за този автомобил ' +
+          'също ще бъдат изтрити завинаги.\n\n' +
+          'Това действие е необратимо.'
+        }
+        type="warning"
+        confirmText={deleting ? 'Изтриване...' : 'Изтрий'}
+        cancelText="Отказ"
+        onConfirm={handleDelete}
+        onCancel={() => {
+          if (!deleting) {
+            setDeleteAlertVisible(false);
+          }
+        }}
+      />
 
-          <Text style={styles.serviceDescription}>
-            Преглед и добавяне на сервизни записи
-          </Text>
-        </View>
-
-        <Ionicons
-          name="chevron-forward"
-          size={22}
-          color={colors.primary}
-        />
-      </TouchableOpacity>
-    </ScrollView>
+      {/* Error message */}
+      <CustomAlert
+        visible={Boolean(deleteError)}
+        title="Грешка при изтриване"
+        message={deleteError}
+        type="error"
+        confirmText="Разбрах"
+        onConfirm={() => setDeleteError('')}
+      />
+    </>
   );
 }
 
@@ -511,6 +626,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 
+  refreshIndicator: {
+    marginTop: spacing.md,
+  },
+
   mileageCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -613,6 +732,29 @@ const styles = StyleSheet.create({
     color: colors.background,
     fontSize: typography.sizes.md,
     fontWeight: '700',
+  },
+
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.danger,
+    borderRadius: 14,
+    paddingVertical: spacing.lg,
+    marginTop: spacing.md,
+  },
+
+  deleteButtonText: {
+    color: colors.danger,
+    fontSize: typography.sizes.md,
+    fontWeight: '700',
+  },
+
+  disabledButton: {
+    opacity: 0.6,
   },
 
   serviceCard: {

@@ -178,3 +178,46 @@ export async function getVehicleById(vehicleId, userId) {
 }
 
 
+export async function deleteVehicle(vehicleId, userId) {
+  if (!vehicleId) {
+    throw new Error('Не е избран автомобил.');
+  }
+
+  if (!userId) {
+    throw new Error('Няма активна потребителска сесия.');
+  }
+
+  const { data, error } = await supabase
+    .from('vehicles')
+    .delete()
+    .eq('id', vehicleId)
+    .eq('user_id', userId)
+    .select('id, image_url')
+    .single();
+
+  if (error) {
+    console.error('Vehicle delete error:', error);
+    throw error;
+  }
+
+  // След успешно изтриване премахваме и снимката.
+  if (data.image_url) {
+    const { error: storageError } = await supabase.storage
+      .from('vehicle-images')
+      .remove([data.image_url]);
+
+    if (storageError) {
+      // Автомобилът вече е изтрит.
+      // Не представяме операцията като неуспешна
+      // само заради снимката.
+      console.warn(
+        'Автомобилът е изтрит, но снимката не е премахната:',
+        storageError
+      );
+    }
+  }
+
+  return data;
+}
+
+
