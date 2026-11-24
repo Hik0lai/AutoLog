@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import DashboardScreen from '../screens/DashboardScreen';
 import GarageStackNavigator from './GarageStackNavigator';
-import RemindersScreen from '../screens/RemindersScreen';
+import RemindersStackNavigator from './RemindersStackNavigator';
 import ExpensesScreen from '../screens/ExpensesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
@@ -75,12 +75,30 @@ export default function MainTabNavigator() {
         },
       })}
     >
-      <Tab.Screen name="Начало" component={DashboardScreen} />
-      <Tab.Screen name="Гараж" component={GarageStackNavigator} />
-      <Tab.Screen name="Напомняния" component={RemindersScreen} />
-      <Tab.Screen name="Разходи" component={ExpensesScreen} />
-      <Tab.Screen name="Профил" component={ProfileScreen} />
+      <Tab.Screen
+        name="Начало"
+        component={DashboardScreen}
+      />
 
+      <Tab.Screen
+        name="Гараж"
+        component={GarageStackNavigator}
+      />
+
+      <Tab.Screen
+        name="Напомняния"
+        component={RemindersStackNavigator}
+      />
+
+      <Tab.Screen
+        name="Разходи"
+        component={ExpensesScreen}
+      />
+
+      <Tab.Screen
+        name="Профил"
+        component={ProfileScreen}
+      />
     </Tab.Navigator>
   );
 }
