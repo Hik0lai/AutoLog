@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DashboardScreen from '../screens/DashboardScreen';
 import GarageStackNavigator from './GarageStackNavigator';
 import RemindersStackNavigator from './RemindersStackNavigator';
-import ExpensesScreen from '../screens/ExpensesScreen';
+import ExpensesStackNavigator from './ExpensesStackNavigator';
 import ProfileScreen from '../screens/ProfileScreen';
 
 import colors from '../constants/colors';
@@ -92,7 +92,7 @@ export default function MainTabNavigator() {
 
       <Tab.Screen
         name="Разходи"
-        component={ExpensesScreen}
+        component={ExpensesStackNavigator}
       />
 
       <Tab.Screen
