@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import ExpensesScreen from '../screens/ExpensesScreen';
 import ExpenseFormScreen from '../screens/expenses/ExpenseFormScreen';
+import ExpenseDetailsScreen from '../screens/expenses/ExpenseDetailsScreen';
 
 import colors from '../constants/colors';
 
@@ -27,6 +28,11 @@ export default function ExpensesStackNavigator() {
       <Stack.Screen
         name="ExpenseForm"
         component={ExpenseFormScreen}
+      />
+
+      <Stack.Screen
+        name="ExpenseDetails"
+        component={ExpenseDetailsScreen}
       />
     </Stack.Navigator>
   );

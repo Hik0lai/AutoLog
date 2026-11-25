@@ -13,7 +13,10 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import {
+  useNavigation,
+  useFocusEffect,
+} from '@react-navigation/native';
 
 import colors from '../constants/colors';
 import spacing from '../constants/spacing';
@@ -21,7 +24,25 @@ import typography from '../constants/typography';
 
 import { useAuth } from '../context/AuthContext';
 import { getVehicles } from '../services/vehicleService';
+import { getCombinedExpenses } from '../services/expenseService';
 import { supabase } from '../services/supabase';
+
+function formatMoney(value) {
+  return new Intl.NumberFormat('bg-BG', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0);
+}
+
+function getCurrentMonthKey() {
+  const now = new Date();
+
+  return `${now.getFullYear()}-${String(
+    now.getMonth() + 1
+  ).padStart(2, '0')}`;
+}
 
 export default function DashboardScreen() {
   const navigation = useNavigation();
@@ -35,11 +56,20 @@ export default function DashboardScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  const [monthlyExpenses, setMonthlyExpenses] =
+    useState(0);
+
+  const [expensesLoading, setExpensesLoading] =
+    useState(true);
+
+  const [expensesError, setExpensesError] =
+    useState(false);
+
   const cardWidth = width - spacing.lg * 2;
 
-  // Зареждане на автомобилите и техните снимки от Supabase
+  // Зареждане на автомобилите и техните снимки
   const loadVehicles = useCallback(async () => {
-    if (!user) {
+    if (!user?.id) {
       setVehicles([]);
       setLoading(false);
       return;
@@ -61,9 +91,13 @@ export default function DashboardScreen() {
           }
 
           try {
-            const { data: imageData, error } = await supabase.storage
-              .from('vehicle-images')
-              .createSignedUrl(vehicle.image_url, 3600);
+            const { data: imageData, error } =
+              await supabase.storage
+                .from('vehicle-images')
+                .createSignedUrl(
+                  vehicle.image_url,
+                  3600
+                );
 
             if (error) {
               throw error;
@@ -90,22 +124,72 @@ export default function DashboardScreen() {
       setVehicles(vehiclesWithImages);
       setCurrentIndex(0);
     } catch (error) {
-      console.error('Dashboard vehicles error:', error);
+      console.error(
+        'Dashboard vehicles error:',
+        error
+      );
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
-  // Обновяване при всяко отваряне на началната страница
+  // Зареждане на разходите за текущия месец
+  const loadMonthlyExpenses = useCallback(async () => {
+    if (!user?.id) {
+      setMonthlyExpenses(0);
+      setExpensesError(false);
+      setExpensesLoading(false);
+      return;
+    }
+
+    try {
+      setExpensesLoading(true);
+      setExpensesError(false);
+
+      const expenses = await getCombinedExpenses(
+        user.id
+      );
+
+      const currentMonth = getCurrentMonthKey();
+
+      const total = (expenses || [])
+        .filter(
+          (expense) =>
+            expense.expense_date?.slice(0, 7) ===
+            currentMonth
+        )
+        .reduce(
+          (sum, expense) =>
+            sum + Number(expense.amount || 0),
+          0
+        );
+
+      setMonthlyExpenses(total);
+    } catch (error) {
+      console.error(
+        'Dashboard expenses error:',
+        error
+      );
+
+      setExpensesError(true);
+    } finally {
+      setExpensesLoading(false);
+    }
+  }, [user?.id]);
+
+  // Обновяване при всяко отваряне на началния екран
   useFocusEffect(
     useCallback(() => {
       loadVehicles();
-    }, [loadVehicles])
+      loadMonthlyExpenses();
+    }, [loadVehicles, loadMonthlyExpenses])
   );
 
   // Преминаване към конкретен автомобил
-  const scrollToVehicle = index => {
-    if (index < 0 || index >= vehicles.length) return;
+  const scrollToVehicle = (index) => {
+    if (index < 0 || index >= vehicles.length) {
+      return;
+    }
 
     scrollRef.current?.scrollTo({
       x: index * cardWidth,
@@ -116,15 +200,25 @@ export default function DashboardScreen() {
   };
 
   // Отчитане на текущия автомобил при плъзгане
-  const handleScrollEnd = event => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / cardWidth);
+  const handleScrollEnd = (event) => {
+    const offsetX =
+      event.nativeEvent.contentOffset.x;
+
+    const index = Math.round(
+      offsetX / cardWidth
+    );
 
     setCurrentIndex(index);
   };
 
   const openGarage = () => {
     navigation.navigate('Гараж');
+  };
+
+  const openExpenses = () => {
+    navigation.navigate('Разходи', {
+      screen: 'ExpensesList',
+    });
   };
 
   return (
@@ -136,13 +230,20 @@ export default function DashboardScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Добре дошъл!</Text>
-          <Text style={styles.title}>Моят AutoLog</Text>
+          <Text style={styles.greeting}>
+            Добре дошъл!
+          </Text>
+
+          <Text style={styles.title}>
+            Моят AutoLog
+          </Text>
         </View>
 
         <TouchableOpacity
           style={styles.profileButton}
-          onPress={() => navigation.navigate('Профил')}
+          onPress={() =>
+            navigation.navigate('Профил')
+          }
         >
           <Ionicons
             name="person-outline"
@@ -154,10 +255,14 @@ export default function DashboardScreen() {
 
       {/* Garage section */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Моят гараж</Text>
+        <Text style={styles.sectionTitle}>
+          Моят гараж
+        </Text>
 
         <TouchableOpacity onPress={openGarage}>
-          <Text style={styles.seeAll}>Виж всички</Text>
+          <Text style={styles.seeAll}>
+            Виж всички
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -168,6 +273,7 @@ export default function DashboardScreen() {
             size="large"
             color={colors.primary}
           />
+
           <Text style={styles.loadingText}>
             Зареждане на автомобилите...
           </Text>
@@ -192,6 +298,7 @@ export default function DashboardScreen() {
                 size={17}
                 color={colors.textSecondary}
               />
+
               <Text style={styles.imageLabelText}>
                 Добави автомобил
               </Text>
@@ -203,6 +310,7 @@ export default function DashboardScreen() {
               <Text style={styles.vehicleTitle}>
                 Твоят гараж е празен
               </Text>
+
               <Text style={styles.vehicleSubtitle}>
                 Все още няма добавен автомобил
               </Text>
@@ -227,7 +335,7 @@ export default function DashboardScreen() {
             decelerationRate="fast"
             style={styles.carousel}
           >
-            {vehicles.map(vehicle => (
+            {vehicles.map((vehicle) => (
               <TouchableOpacity
                 key={vehicle.id}
                 style={[
@@ -240,7 +348,9 @@ export default function DashboardScreen() {
                 <View style={styles.vehicleImage}>
                   {vehicle.signedImageUrl ? (
                     <Image
-                      source={{ uri: vehicle.signedImageUrl }}
+                      source={{
+                        uri: vehicle.signedImageUrl,
+                      }}
                       style={styles.vehiclePhoto}
                       resizeMode="cover"
                       onError={() => {
@@ -248,12 +358,17 @@ export default function DashboardScreen() {
                           `Снимката на ${vehicle.brand} ${vehicle.model} не може да бъде визуализирана.`
                         );
 
-                        setVehicles(currentVehicles =>
-                          currentVehicles.map(item =>
-                            item.id === vehicle.id
-                              ? { ...item, signedImageUrl: null }
-                              : item
-                          )
+                        setVehicles(
+                          (currentVehicles) =>
+                            currentVehicles.map(
+                              (item) =>
+                                item.id === vehicle.id
+                                  ? {
+                                      ...item,
+                                      signedImageUrl: null,
+                                    }
+                                  : item
+                            )
                         );
                       }}
                     />
@@ -271,6 +386,7 @@ export default function DashboardScreen() {
                       size={15}
                       color={colors.textSecondary}
                     />
+
                     <Text style={styles.imageLabelText}>
                       Моят автомобил
                     </Text>
@@ -278,7 +394,9 @@ export default function DashboardScreen() {
                 </View>
 
                 <View style={styles.vehicleInfo}>
-                  <View style={styles.vehicleTextContainer}>
+                  <View
+                    style={styles.vehicleTextContainer}
+                  >
                     <Text
                       style={styles.vehicleTitle}
                       numberOfLines={1}
@@ -287,11 +405,15 @@ export default function DashboardScreen() {
                     </Text>
 
                     <Text style={styles.vehicleSubtitle}>
-                      {vehicle.year} г. · {vehicle.registration_number}
+                      {vehicle.year} г. ·{' '}
+                      {vehicle.registration_number}
                     </Text>
 
                     <Text style={styles.vehicleMileage}>
-                      {Number(vehicle.mileage).toLocaleString('bg-BG')} км
+                      {Number(
+                        vehicle.mileage
+                      ).toLocaleString('bg-BG')}{' '}
+                      км
                     </Text>
                   </View>
 
@@ -311,10 +433,13 @@ export default function DashboardScreen() {
               <TouchableOpacity
                 style={[
                   styles.arrowButton,
-                  currentIndex === 0 && styles.arrowDisabled,
+                  currentIndex === 0 &&
+                    styles.arrowDisabled,
                 ]}
                 disabled={currentIndex === 0}
-                onPress={() => scrollToVehicle(currentIndex - 1)}
+                onPress={() =>
+                  scrollToVehicle(currentIndex - 1)
+                }
               >
                 <Ionicons
                   name="chevron-back"
@@ -343,11 +468,16 @@ export default function DashboardScreen() {
               <TouchableOpacity
                 style={[
                   styles.arrowButton,
-                  currentIndex === vehicles.length - 1 &&
+                  currentIndex ===
+                    vehicles.length - 1 &&
                     styles.arrowDisabled,
                 ]}
-                disabled={currentIndex === vehicles.length - 1}
-                onPress={() => scrollToVehicle(currentIndex + 1)}
+                disabled={
+                  currentIndex === vehicles.length - 1
+                }
+                onPress={() =>
+                  scrollToVehicle(currentIndex + 1)
+                }
               >
                 <Ionicons
                   name="chevron-forward"
@@ -370,38 +500,93 @@ export default function DashboardScreen() {
       </Text>
 
       <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
+        <TouchableOpacity
+          style={styles.statCard}
+          activeOpacity={0.8}
+          onPress={openGarage}
+          accessibilityRole="button"
+          accessibilityLabel="Моят гараж"
+        >
+          <View style={styles.statCardHeader}>
+            <View style={styles.statIcon}>
+              <Ionicons
+                name="car-outline"
+                size={22}
+                color={colors.primary}
+              />
+            </View>
+
             <Ionicons
-              name="car-outline"
-              size={22}
-              color={colors.primary}
+              name="chevron-forward"
+              size={17}
+              color={colors.textSecondary}
             />
           </View>
 
           <Text style={styles.statValue}>
-            {vehicles.length}
+            {loading ? '—' : vehicles.length}
           </Text>
 
           <Text style={styles.statLabel}>
             Автомобили
           </Text>
-        </View>
+        </TouchableOpacity>
 
-        <View style={styles.statCard}>
-          <View style={styles.statIcon}>
+        <TouchableOpacity
+          style={styles.statCard}
+          activeOpacity={0.8}
+          onPress={openExpenses}
+          accessibilityRole="button"
+          accessibilityLabel="Разходи този месец"
+        >
+          <View style={styles.statCardHeader}>
+            <View style={styles.statIcon}>
+              <Ionicons
+                name="wallet-outline"
+                size={22}
+                color={colors.success}
+              />
+            </View>
+
             <Ionicons
-              name="wallet-outline"
-              size={22}
-              color={colors.success}
+              name="chevron-forward"
+              size={17}
+              color={colors.textSecondary}
             />
           </View>
 
-          <Text style={styles.statValue}>0.00 лв.</Text>
+          {expensesLoading ? (
+            <ActivityIndicator
+              size="small"
+              color={colors.primary}
+              style={styles.statLoading}
+            />
+          ) : (
+            <Text
+              style={[
+                styles.statValue,
+                styles.expensesValue,
+              ]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.6}
+            >
+              {expensesError
+                ? '—'
+                : formatMoney(monthlyExpenses)}
+            </Text>
+          )}
+
           <Text style={styles.statLabel}>
             Разходи този месец
           </Text>
-        </View>
+
+          {expensesError && (
+            <Text style={styles.statError}>
+              Неуспешно зареждане
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       {/* Reminders */}
@@ -411,9 +596,13 @@ export default function DashboardScreen() {
         </Text>
 
         <TouchableOpacity
-          onPress={() => navigation.navigate('Напомняния')}
+          onPress={() =>
+            navigation.navigate('Напомняния')
+          }
         >
-          <Text style={styles.seeAll}>Виж всички</Text>
+          <Text style={styles.seeAll}>
+            Виж всички
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -430,8 +619,10 @@ export default function DashboardScreen() {
           <Text style={styles.infoTitle}>
             Няма предстоящи напомняния
           </Text>
+
           <Text style={styles.infoDescription}>
-            Добави автомобил и създай първото си напомняне.
+            Добави автомобил и създай първото си
+            напомняне.
           </Text>
         </View>
       </View>
@@ -454,6 +645,7 @@ export default function DashboardScreen() {
           <Text style={styles.infoTitle}>
             Все още няма дейности
           </Text>
+
           <Text style={styles.infoDescription}>
             Сервизната история ще се показва тук.
           </Text>
@@ -671,6 +863,13 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
 
+  statCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+
   statIcon: {
     width: 40,
     height: 40,
@@ -678,7 +877,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.md,
   },
 
   statValue: {
@@ -687,9 +885,24 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.bold,
   },
 
+  expensesValue: {
+    color: colors.success,
+  },
+
+  statLoading: {
+    alignSelf: 'flex-start',
+    minHeight: 28,
+  },
+
   statLabel: {
     color: colors.textSecondary,
     fontSize: typography.sizes.xs,
+    marginTop: spacing.xs,
+  },
+
+  statError: {
+    color: colors.danger,
+    fontSize: 10,
     marginTop: spacing.xs,
   },
 

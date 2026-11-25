@@ -1,3 +1,4 @@
+
 import { useCallback, useMemo, useState } from 'react';
 import {
   View,
@@ -89,6 +90,29 @@ const PERIODS = [
   { value: 'previous_month', label: 'Миналия месец' },
   { value: 'year', label: 'Тази година' },
 ];
+
+const FUEL_TYPES = {
+  petrol: {
+    label: 'Бензин',
+    unit: 'л',
+  },
+  diesel: {
+    label: 'Дизел',
+    unit: 'л',
+  },
+  lpg: {
+    label: 'Газ (LPG)',
+    unit: 'л',
+  },
+  cng: {
+    label: 'Метан (CNG)',
+    unit: 'кг',
+  },
+  electric: {
+    label: 'Електричество',
+    unit: 'kWh',
+  },
+};
 
 function getCategory(category) {
   return (
@@ -258,12 +282,31 @@ function FilterSelector({
   );
 }
 
-function ExpenseCard({ expense }) {
+function ExpenseCard({ expense, onPress }) {
   const category = getCategory(expense.category);
   const vehicle = expense.vehicle;
 
+  const isService = expense.source === 'service';
+
+  const Card = isService ? View : TouchableOpacity;
+
+  const fuel = FUEL_TYPES[expense.fuel_type] || {
+    label: expense.fuel_type,
+    unit: 'л',
+  };
+
   return (
-    <View style={styles.expenseCard}>
+    <Card
+      style={styles.expenseCard}
+      {...(!isService
+        ? {
+            onPress,
+            activeOpacity: 0.8,
+            accessibilityRole: 'button',
+            accessibilityLabel: getExpenseTitle(expense),
+          }
+        : {})}
+    >
       <View style={styles.expenseMainRow}>
         <View
           style={[
@@ -302,19 +345,27 @@ function ExpenseCard({ expense }) {
         <Text style={styles.expenseAmount}>
           {formatMoney(expense.amount)}
         </Text>
+
+        {!isService && (
+          <Ionicons
+            name="chevron-forward"
+            size={19}
+            color={colors.textSecondary}
+          />
+        )}
       </View>
 
       {expense.category === 'fuel' && (
         <View style={styles.fuelInfo}>
           {expense.fuel_type && (
             <Text style={styles.fuelInfoText}>
-              {expense.fuel_type}
+              {fuel.label}
             </Text>
           )}
 
           {expense.liters != null && (
             <Text style={styles.fuelInfoText}>
-              {formatNumber(expense.liters, 3)} л
+              {formatNumber(expense.liters, 3)} {fuel.unit}
             </Text>
           )}
 
@@ -323,23 +374,24 @@ function ExpenseCard({ expense }) {
               {formatNumber(
                 expense.price_per_liter,
                 3
-              )} €/л
+              )} €/{fuel.unit}
             </Text>
           )}
 
-          {expense.full_tank && (
-            <View style={styles.fullTankBadge}>
-              <Ionicons
-                name="checkmark-circle-outline"
-                size={14}
-                color="#22C55E"
-              />
+          {expense.full_tank &&
+            expense.fuel_type !== 'electric' && (
+              <View style={styles.fullTankBadge}>
+                <Ionicons
+                  name="checkmark-circle-outline"
+                  size={14}
+                  color="#22C55E"
+                />
 
-              <Text style={styles.fullTankText}>
-                Пълен резервоар
-              </Text>
-            </View>
-          )}
+                <Text style={styles.fullTankText}>
+                  Пълен резервоар
+                </Text>
+              </View>
+            )}
         </View>
       )}
 
@@ -352,7 +404,7 @@ function ExpenseCard({ expense }) {
         </Text>
       ) : null}
 
-      {expense.source === 'service' && (
+      {isService && (
         <View style={styles.serviceBadge}>
           <Ionicons
             name="construct-outline"
@@ -365,7 +417,7 @@ function ExpenseCard({ expense }) {
           </Text>
         </View>
       )}
-    </View>
+    </Card>
   );
 }
 
@@ -628,7 +680,9 @@ export default function ExpensesScreen({ navigation }) {
 
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => navigation.navigate('ExpenseForm')}
+          onPress={() =>
+            navigation.navigate('ExpenseForm')
+          }
           activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel="Добави разход"
@@ -638,7 +692,10 @@ export default function ExpensesScreen({ navigation }) {
             size={22}
             color="#FFFFFF"
           />
-          <Text style={styles.addButtonText}>Добави разход</Text>
+
+          <Text style={styles.addButtonText}>
+            Добави разход
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -789,6 +846,11 @@ export default function ExpensesScreen({ navigation }) {
           <ExpenseCard
             key={expense.uniqueKey}
             expense={expense}
+            onPress={() =>
+              navigation.navigate('ExpenseDetails', {
+                expenseId: expense.id,
+              })
+            }
           />
         ))
       )}
